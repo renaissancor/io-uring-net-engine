@@ -1,0 +1,52 @@
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+out/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.cache/
+.ccls-cache/
+.clangd/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling state (kept out of source control by default)
+.omc/
+.claude/
+
+# Coverage / sanitizers / perf
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+perf.data*
+core
+core.*
+vgcore.*
+
+# Local secrets / scratch
+.env
+.env.*
+scratch/
