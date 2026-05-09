@@ -101,7 +101,7 @@ rwlock — out of scope.
 **Debug-build deadlock profiling.** In debug builds, `sync::mutex` and
 `sync::shared_mutex` may be aliased to a wrapper that records lock-order
 edges into the deadlock profiler. See
-`docs/primitives/deadlock-profiler.md`.
+`wiki/diagnostic/deadlock_profiler.md`.
 
 ## Concurrency & ownership
 

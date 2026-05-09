@@ -78,7 +78,7 @@ buffers larger than 2 KiB, this falls through to `std::aligned_alloc(64, ..)`.
 **`io_uring` integration.** Recv ring buffers can optionally be registered
 via `io_uring_register_buffers` for fixed-buffer recv. Provided buffers
 (kernel 5.19+) are an alternative; see
-`docs/network/io-uring-reactor.md`.
+`wiki/network/io_uring_reactor.md`.
 
 **`RecvRingBuffer::peek_packet`.** Inspects the first 4 bytes after
 `read_pos_` to extract the framing header (`uint16 size | uint16 id`) and
@@ -130,4 +130,4 @@ payload.
 3. **Backpressure.** Send ring full → ? Block the producer coroutine on a
    "writable" awaitable, or drop the connection. Current plan: block (the
    producer is a coroutine, so this is a clean suspension). Documented in
-   `docs/network/session.md`.
+   `wiki/network/session.md`.

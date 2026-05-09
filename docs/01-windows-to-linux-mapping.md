@@ -122,7 +122,7 @@ against ABA explicitly — either via tagged pointers (low bits as a
 generation counter; requires 16-byte alignment of nodes) or hazard pointers.
 This is **the** subtlety that agent-written replacements get wrong.
 
-See `docs/primitives/lock-free-stack.md` for the full design.
+See `wiki/sync/lock_free_stack.md` for the full design.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/MemoryPool.h:9`, `Engine/MemoryPool.cpp:8, 14, 21, 26`
@@ -172,7 +172,7 @@ See `docs/primitives/lock-free-stack.md` for the full design.
 **Userdata convention:** every SQE submitted in this project encodes a tagged
 pointer in `sqe->user_data` whose low bits identify the op type and high
 bits point to the owning coroutine handle (or session, depending on doc).
-See `docs/network/io-uring-reactor.md`.
+See `wiki/network/io_uring_reactor.md`.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/pch.h:12-14` (winsock includes — declared but unused)
@@ -221,7 +221,7 @@ Win32 has multiple error mechanisms (`GetLastError`, `WSAGetLastError`,
 negated value of `cqe->res`).
 
 This project uses `std::error_code` as the public surface (see
-`docs/primitives/sync-primitives.md` and `docs/network/io-uring-reactor.md`
+`wiki/sync/sync_primitives.md` and `wiki/network/io_uring_reactor.md`
 for the error category). I/O failures return `std::expected<T,
 std::error_code>`; bugs throw.
 

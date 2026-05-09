@@ -72,7 +72,7 @@ parity. Lookup table indexed by `(bytes - 1) >> 5` truncated to log2 spacing
 above 256 — same as `Engine/Memory.cpp` build-time table.
 
 **Bucket storage.** Each `MemoryPool` owns one Treiber stack (see
-`docs/primitives/lock-free-stack.md`) of `MemoryHeader*`. Push/pop are
+`wiki/sync/lock_free_stack.md`) of `MemoryHeader*`. Push/pop are
 lock-free via tagged-pointer CAS.
 
 **Block source.** Each pool requests blocks from the kernel via
@@ -142,4 +142,4 @@ caller.
    pays 50% overhead). Reference accepts this. **Keep for v1.**
 4. **Allocator-free large allocations.** Should >2048-byte allocations also
    record in a per-thread leak-tracker map for debug builds? Yes — see
-   `docs/primitives/leak-tracker.md`.
+   `wiki/memory/leak_tracker.md`.

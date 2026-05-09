@@ -132,7 +132,7 @@ void session::kick_send() {
 
 **Wire framing.** `recv_buf_.peek_packet` parses
 `[uint16 size | uint16 id]` and returns a `frame_view{size, id,
-payload_span}`. See `docs/network/packet-framing.md`.
+payload_span}`. See `wiki/network/packet_framing.md`.
 
 **Close semantics.** `disconnect()`:
 1. Marks `connected_ = false`.
