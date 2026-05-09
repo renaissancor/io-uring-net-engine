@@ -71,29 +71,52 @@ iouring-net-lib/
 ├── CMakeLists.txt
 ├── cmake/
 │   └── compiler-warnings.cmake
-├── src/
-│   ├── primitives/
-│   ├── runtime/
-│   └── network/
-├── include/iouring_net/
-│   ├── primitives/
-│   ├── runtime/
-│   └── network/
-├── tests/
-│   ├── unit/
-│   └── integration/
+├── src/                   headers and sources together; no separate include/
+│   ├── data_structure/    ring_buffer, serial_buffer, cstr_hash_map,
+│   │                      indexed_heap, malloc_vector
+│   ├── memory/            memory_pool, object_pool, leak_tracker,
+│   │                      guard_overflow
+│   ├── sync/              atomic, mutex, shared_mutex, lock_free_stack
+│   ├── diagnostic/        logger, deadlock_profiler, profiler
+│   ├── runtime/           task, reactor, job_queue, thread_context
+│   └── network/           listener, service, session, packet_framing,
+│                          packet_handler
+├── tests/                 mirrors src/ category layout
+│   ├── data_structure/  memory/  sync/  diagnostic/  runtime/  network/
+│   └── integration/       cross-subsystem (multi-process loopback,
+│                          wire-format parity)
 ├── examples/
 │   └── echo_server/
-├── docs/                  ← this directory
-├── benchmarks/
+├── benchmarks/            nanobench micro-benchmarks; run on demand
+├── docs/                  library-wide documentation
+│   ├── 00-overview.md ... 04-coding-style.md
+│   └── testing/test-strategy.md
+├── wiki/                  per-source-file design docs (mirror of src/)
+│   └── data_structure/  memory/  sync/  diagnostic/  runtime/  network/
 └── scripts/
     ├── lint.sh
     └── kernel-probe.sh    ← prints available IORING_FEAT_*
 ```
 
-Public headers live under `include/iouring_net/`; the install prefix is
-`<prefix>/include/iouring_net/...`. The directory mirrors the layered
-subsystem map: `primitives/`, `runtime/`, `network/`.
+Headers and sources sit together under `src/<category>/`. There is no
+separate `include/` directory. Inside the project, `#include` paths are
+relative to `src/`:
+
+```cpp
+#include "data_structure/ring_buffer.h"
+#include "sync/mutex.h"
+```
+
+**Install layout.** CMake copies `src/**/*.h` to
+`<prefix>/include/iouring_net/`, preserving relative paths. External
+consumers write `#include <iouring_net/data_structure/ring_buffer.h>`.
+
+**Folder vs. namespace.** Folders organize source files by *function*
+(`data_structure/`, `sync/`, etc.), not by namespace. Most code lives in
+the global namespace; `lnx::` is reserved for raw POSIX/Linux API
+wrappers; per-subsystem namespaces are introduced only where a subsystem
+groups multiple related types around a `manager` singleton. See
+`04-coding-style.md` for the full rules.
 
 ---
 
@@ -117,12 +140,13 @@ subsystem map: `primitives/`, `runtime/`, `network/`.
 
 ## Test layout
 
-- `tests/unit/` — Catch2 unit tests; one source per primitive.
-- `tests/integration/` — multi-process loopback tests, including the
+- `tests/<category>/` — Catch2 unit + component tests; the tree mirrors
+  `src/<category>/` one file per source file.
+- `tests/integration/` — multi-process loopback tests including the
   Linux-vs-Windows wire-format-parity test (sends pre-recorded packet
   fixtures captured from the Windows reference).
-- `benchmarks/` — `nanobench`-driven micro-benchmarks; run on demand, not in
-  CI by default.
+- `benchmarks/` — `nanobench`-driven micro-benchmarks; run on demand, not
+  in CI by default.
 
 See `docs/testing/test-strategy.md` for the test-pyramid breakdown.
 
