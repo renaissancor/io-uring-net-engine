@@ -45,29 +45,33 @@ primitives; application code depends on the network layer.
 
 ## Subsystem inventory
 
-| Layer       | Subsystem            | Status   | Reference origin                                        |
-|-------------|----------------------|----------|---------------------------------------------------------|
-| Primitive   | MemoryPool           | Port     | `IOCP_Rookiss/Engine/MemoryPool.h:14`                   |
-| Primitive   | ObjectPool           | Port     | `IOCP_Rookiss/Engine/ObjectPool.h:8`                    |
-| Primitive   | Allocator (STL)      | Port     | `IOCP_Rookiss/Engine/Allocator.h:19`, `WindowsLibrary/Library/WinMemory.h:20` |
-| Primitive   | RingBuffer           | Port     | `WindowsLibrary/Library/Include/RingBuffer.h:5`, `SelectServer/.../RingBuffer.h` |
-| Primitive   | SerialBuffer         | Port     | `WindowsLibrary/Library/Include/SerialBuffer.h:5`       |
-| Primitive   | Mutex / SharedMutex  | Rewrite  | `IOCP_Rookiss/Engine/Mutex.h:5`, `WindowsLibrary/Library/Include/WinMutex.h:7` |
-| Primitive   | Atomic               | Rewrite  | `IOCP_Rookiss/Engine/Atomic.h:5`, `WindowsLibrary/Library/Include/WinAtomic.h:6` |
-| Primitive   | Lock-free stack      | New      | Replaces Win32 `SLIST_HEADER`                           |
-| Primitive   | DeadLock profiler    | Port     | `IOCP_Rookiss/Engine/DeadLockDebugger.h:11` (reference declares `CheckCycle()` at `:31` but never implements it; our port does) |
-| Primitive   | Leak tracker         | Port     | `WindowsLibrary/Library/Include/NewTracer.h:33`         |
-| Primitive   | indexed_heap         | Defer (v2) | `WindowsLibrary/Library/Include/indexed_heap.h:5` — position-tracked min-heap; useful for game-side use cases (Dijkstra/A*/event scheduling), not v1 |
-| Primitive   | cstr_hash_map        | Defer (v2) | `WindowsLibrary/Library/Include/cstr_hash_map.h:5` — djb2-hashed const-char-key map; v1 uses `std::unordered_map` |
-| Runtime     | Reactor (io_uring)   | New      | Replaces `IocpCore` (declared but not implemented in IOCP_Rookiss) |
-| Runtime     | CoroutineTask        | New      | Standard C++20 coroutine machinery                      |
-| Runtime     | JobQueue             | New      | NextProject.md mentions it; no reference implementation in any repo |
-| Runtime     | ThreadContext (TLS)  | New      | Stubs only in `IOCP_Rookiss/Engine/ThreadManager.cpp:8` |
-| Network     | Service              | New      | Concept only — no IOCP-side implementation              |
-| Network     | Listener             | Port     | `SelectServer/.../Net.cpp:181` (accept loop)            |
-| Network     | Session              | New      | Replaces select-loop `Session` struct (`SelectServer/.../Net.h:39`) |
-| Network     | PacketFraming        | Port     | Concept from `SelectServer/.../Network.cpp:377` (magic header) |
-| Network     | PacketHandler        | New      | Lecture-derived, not in any reference repo              |
+| Layer       | Subsystem                              | Status     | Reference origin                                        |
+|-------------|----------------------------------------|------------|---------------------------------------------------------|
+| Primitive   | `memory_pool`                          | Port       | `IOCP_Rookiss/Engine/MemoryPool.h:14`                   |
+| Primitive   | `object_pool`                          | Port       | `IOCP_Rookiss/Engine/ObjectPool.h:8`                    |
+| Primitive   | `stl_allocator`                        | Port       | `IOCP_Rookiss/Engine/Allocator.h:19`, `WindowsLibrary/Library/WinMemory.h:20` |
+| Primitive   | `ring_buffer`                          | Port       | `WindowsLibrary/Library/Include/RingBuffer.h:5`, `SelectServer/.../RingBuffer.h` |
+| Primitive   | `serial_buffer`                        | Port       | `WindowsLibrary/Library/Include/SerialBuffer.h:5`       |
+| Primitive   | `lnx::mutex` / `lnx::shared_mutex`     | Rewrite    | `IOCP_Rookiss/Engine/Mutex.h:5`, `WindowsLibrary/Library/Include/WinMutex.h:7` |
+| Primitive   | `lnx::atomic32` / `atomic64` / `atomic_ptr` | Rewrite | `IOCP_Rookiss/Engine/Atomic.h:5`, `WindowsLibrary/Library/Include/WinAtomic.h:6` |
+| Primitive   | `lock_free_stack`                      | New        | Replaces Win32 `SLIST_HEADER`                           |
+| Primitive   | `deadlock_profiler::manager`           | Port       | `IOCP_Rookiss/Engine/DeadLockDebugger.h:11` (reference declares `CheckCycle()` at `:31` but never implements it; our port does) |
+| Primitive   | `leak_tracker::manager`                | Port       | `WindowsLibrary/Library/Include/NewTracer.h:33`         |
+| Primitive   | `malloc_vector`                        | Port       | `WindowsLibrary/Library/Include/malloc_vector.h:5` — `std::vector`-shaped container backed by `malloc`/`free`; required by `leak_tracker` to avoid `new` recursion |
+| Primitive   | `cstr_hash_map`                        | Port       | `WindowsLibrary/Library/Include/cstr_hash_map.h:5` — djb2-hashed `const char*`-key map; promoted from v2, implementation already exists |
+| Primitive   | `indexed_heap`                         | Port       | `WindowsLibrary/Library/Include/indexed_heap.h:5` — position-tracked min-heap; promoted from v2, implementation already exists |
+| Primitive   | `profiler::manager` / `profiler::scope` | Port      | `WindowsLibrary/Library/Include/Profiler.h:5` — Linux port swaps `QueryPerformanceCounter` for `clock_gettime(CLOCK_MONOTONIC)` |
+| Primitive   | `guard_overflow::manager`              | Defer (v2) | `WindowsLibrary/Library/Include/GuardOverflow.h:7` — page-guard allocator; needs `mprotect`-based Linux rewrite |
+| Primitive   | `log::logger`                          | New        | Per-thread queue + async file write; no counterpart in the reference repos checked here |
+| Runtime     | `reactor` (io_uring)                   | New        | Replaces `IocpCore` (declared but not implemented in IOCP_Rookiss) |
+| Runtime     | `task<T>`                              | New        | Standard C++20 coroutine machinery                      |
+| Runtime     | `job_queue`                            | New        | NextProject.md mentions it; no reference implementation in any repo |
+| Runtime     | `thread_context` (TLS)                 | New        | Stubs only in `IOCP_Rookiss/Engine/ThreadManager.cpp:8` |
+| Network     | `service`                              | New        | Concept only — no IOCP-side implementation              |
+| Network     | `listener`                             | Port       | `SelectServer/.../Net.cpp:181` (accept loop)            |
+| Network     | `session`                              | New        | Replaces select-loop `Session` struct (`SelectServer/.../Net.h:39`) |
+| Network     | `packet_framing`                       | Port       | Concept from `SelectServer/.../Network.cpp:377` (magic header) |
+| Network     | `packet_handler`                       | New        | Lecture-derived, not in any reference repo              |
 
 **Status legend:**
 - **Port** — design is OS-agnostic; implementation is a clean transcription with the platform layer swapped.
@@ -118,6 +122,18 @@ This is a design-doc honesty marker, not a problem.
    to the Windows reference. Existing test packets and clients work
    unmodified against the Linux server, and vice versa — this is the
    "directly comparable" property called out in `NextProject.md`.
+
+7. **Namespace tiers.** `lnx::` is reserved for raw POSIX/Linux API
+   wrappers (`mutex`, `atomic32`, future `file` / `socket` / `eventfd`) —
+   the Linux equivalent of `std::` for primitives that directly touch
+   kernel/libc. Pure data structures, compound primitives, and
+   single-class subsystems live at global scope. Diagnostic subsystems
+   that group a `manager` singleton with helper types get their own
+   namespace (`leak_tracker::`, `profiler::`, `deadlock_profiler::`,
+   `guard_overflow::`, `log::`), matching the WindowsLibrary `NewTracer::`
+   / `GuardOverflow::` / `Profiler::` pattern. No umbrella namespace is
+   created just to group files in the same `src/` folder. See
+   `04-coding-style.md` for the full rules.
 
 ---
 
