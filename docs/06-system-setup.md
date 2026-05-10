@@ -15,13 +15,23 @@ cmake --build --preset default
 ctest --preset default
 ```
 
-`scripts/kernel-probe.sh` is the bash-only first-pass probe (kernel
+`ctest --preset default` is configured for stable local runs in
+ptrace/sandboxed environments (`LSAN_OPTIONS=detect_leaks=0`).
+For strict leak checks where ptrace works, run:
+
+```bash
+ctest --preset default-lsan
+```
+
+`scripts/kernel-probe.sh` is the bash-first runtime probe (kernel
 version + `io_uring_disabled` sysctl + `RLIMIT_MEMLOCK` / `NOFILE` +
-liburing version, with a SATISFIED / NOT SATISFIED verdict). The full
-three-layer C-level probe (FEAT bits + `io_uring_get_probe` opcode
-bitmap + per-flag trial-submit) lands when reactor code arrives —
-see `02-build-and-toolchain.md` § "Three-layer feature detection"
-for the eventual target shape.
+liburing floor enforcement + real `io_uring_queue_init` probe with
+decoded errno). Policy/runtime blocks in constrained hosts are reported
+as `DEGRADED` by default (exit 0); use `scripts/kernel-probe.sh --strict`
+to treat them as fatal (exit 1). The full three-layer C-level probe (FEAT bits +
+`io_uring_get_probe` opcode bitmap + per-flag trial-submit) lands when
+reactor code arrives — see `02-build-and-toolchain.md`
+§ "Three-layer feature detection" for the eventual target shape.
 
 ---
 
@@ -131,10 +141,11 @@ uname -r                                # expect 5.19+; WSL2 default is 6.6
 cat /proc/sys/kernel/io_uring_disabled  # must be 0
 ```
 
-`scripts/kernel-probe.sh` runs the bash-only probe (currently — see
-note above). The full three-layer C-level probe lands with reactor
-code; see `02-build-and-toolchain.md` § "Three-layer feature
-detection" for the target output shape.
+`scripts/kernel-probe.sh` runs the current runtime gate, including a
+real `io_uring_queue_init` probe with deterministic errno reporting.
+The full three-layer C-level probe lands with reactor code; see
+`02-build-and-toolchain.md` § "Three-layer feature detection" for the
+target output shape.
 
 ---
 

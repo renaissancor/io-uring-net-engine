@@ -96,14 +96,18 @@ isolated unit tests. Parity catches it.
 
 | Sanitizer | When run                              | Notes                          |
 |-----------|---------------------------------------|--------------------------------|
-| ASan      | Every PR (linux-clang job)            | Default for unit + integration |
+| ASan      | Every PR (floor job, gcc-12)          | Default for unit + integration |
 | UBSan     | Bundled with ASan                     | Free with `-fsanitize=address,undefined` |
-| TSan      | Every PR (linux-clang-tsan job)       | Concurrency tests only         |
+| TSan      | Planned (separate job, lands with reactor) | Concurrency tests only      |
 | MSan      | Manual / opt-in                       | Useful for the codec path; libc++ rebuild required, defer |
 | Valgrind  | Manual                                | Slow; ASan covers the common cases |
 
 ASan and TSan are mutually exclusive (cannot link the same binary with
 both). Run two CI jobs.
+
+For ptrace/sandboxed environments where LeakSanitizer cannot attach,
+`ctest --preset default` already sets `LSAN_OPTIONS=detect_leaks=0`.
+Use `ctest --preset default-lsan` when strict leak checks are available.
 
 ---
 
@@ -131,10 +135,12 @@ sudo sysctl -w vm.mmap_rnd_bits=28
 ```
 
 `tests/CMakeLists.txt` uses `catch_discover_tests(... DISCOVERY_MODE
-PRE_TEST)` so the build itself stays green; the workaround is only
-needed when tests *run*. CMake 3.29's `TEST_LAUNCHER` would let us
-auto-prefix every test with `setarch -R`; until that is the floor,
-the invocation is manual.
+PRE_TEST EXTRA_ARGS --allow-running-no-tests)` so the build itself
+stays green, and policy-classified runtime paths in smoke tests can
+be treated as non-failures without destabilizing CTest. The TSan
+workaround is only needed when tests *run*. CMake 3.29's
+`TEST_LAUNCHER` would let us auto-prefix every test with `setarch -R`;
+until that is the floor, the invocation is manual.
 
 CI workaround: the `linux-gcc-tsan` GHA job does
 `echo 0 | sudo tee /proc/sys/kernel/randomize_va_space` (or the
@@ -148,9 +154,9 @@ TSan job lands.
 
 - Every concurrent test must pass under TSan.
 - "Benign" data races (well-known false positives in third-party code)
-  are silenced via per-file annotations in
-  `tests/sanitizer-suppressions.txt`. Project code does not get
-  suppressions — fix the race or remove the test.
+  will be silenced via per-file annotations in a project-level
+  suppressions file (added when the TSan job lands). Project code does
+  not get suppressions — fix the race or remove the test.
 - Lock-free code (the Treiber stack, the SPSC ring buffer) is the
   most TSan-fragile area. Hand-annotate with explicit memory orders
   and run on every commit that touches those files.

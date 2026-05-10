@@ -103,12 +103,15 @@ the hot path with no further syscalls.
 
 ### `scripts/kernel-probe.sh` — current and target shape
 
-**Current (bash-only, since commit `4c619b1`):** prints kernel
-version, `/proc/sys/kernel/io_uring_disabled`, `RLIMIT_MEMLOCK`,
-`RLIMIT_NOFILE`, `pkg-config --modversion liburing`, and a
-SATISFIED / NOT SATISFIED verdict against the 5.19+ baseline. No
-opcode probing; no trial-submit. Sufficient as a contributor sanity
-check on a fresh box.
+**Current (bash-first):** prints kernel version,
+`/proc/sys/kernel/io_uring_disabled`, `RLIMIT_MEMLOCK`,
+`RLIMIT_NOFILE`, `pkg-config --modversion liburing`, enforces the
+liburing floor (`2.5+`), and runs a real `io_uring_queue_init` probe
+that reports decoded errno on failure. In constrained environments,
+policy/runtime blocks are reported as `DEGRADED` by default, and
+`--strict` upgrades them to hard failure for CI gating. No opcode
+probing; no trial-submit. Sufficient as a contributor sanity check on
+a fresh box.
 
 **Target shape (lands with reactor code):** the same header, plus a
 C-level probe that calls `io_uring_queue_init_params`,
@@ -260,8 +263,8 @@ See `04-coding-style.md` for the full rules.
    with `#pragma once` and few `.cpp` files. For this project, lean
    toward `.cpp` per non-template class to keep build times sane and
    ABI surface visible.
-2. **Static vs. shared default.** Default to static. Add a CMake
-   option `IOURING_NET_BUILD_SHARED=OFF` for users who need it.
+2. **Static vs. shared default.** Default to static. A shared variant
+   can be added later if a consumer needs it.
 3. **Module support (C++20 modules).** Skipped for v1. Toolchain
    support is uneven (clang's `import std` lands in different versions
    per distro). Revisit when GCC 14 and Clang 17 are baseline.

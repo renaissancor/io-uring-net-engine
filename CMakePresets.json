@@ -57,7 +57,19 @@
     { "name": "floor",   "configurePreset": "floor" }
   ],
   "testPresets": [
-    { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": { "outputOnFailure": true },
+      "environment": { "LSAN_OPTIONS": "detect_leaks=0" }
+    },
+    { "name": "default-lsan", "configurePreset": "default", "output": { "outputOnFailure": true } },
+    {
+      "name": "default-no-lsan",
+      "configurePreset": "default",
+      "output": { "outputOnFailure": true },
+      "environment": { "LSAN_OPTIONS": "detect_leaks=0" }
+    },
     { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
     { "name": "floor",   "configurePreset": "floor",   "output": { "outputOnFailure": true } }

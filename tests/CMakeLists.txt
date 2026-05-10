@@ -21,4 +21,6 @@ iouring_net_apply_warnings(iouring_net-test)
 # `FATAL: ThreadSanitizer: unexpected memory mapping` because noble's
 # vm.mmap_rnd_bits=32 conflicts with TSan's hardcoded address layout.
 # See docs/08-test-strategy.md § "TSan on Ubuntu 24.04".
-catch_discover_tests(iouring_net-test DISCOVERY_MODE PRE_TEST)
+catch_discover_tests(iouring_net-test
+  DISCOVERY_MODE PRE_TEST
+  EXTRA_ARGS --allow-running-no-tests)

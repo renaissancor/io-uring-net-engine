@@ -14,8 +14,6 @@ box, see `06-system-setup.md`.
 - One `add_library(iouring_net STATIC ...)` target plus per-test
   executables. **Do not** create one library per layer — keeps ABI
   surface visible and preserves single-include consumer ergonomics.
-- Optional shared variant via a CMake option:
-  `IOURING_NET_BUILD_SHARED=OFF` (default OFF).
 - Language standard expressed via:
   `target_compile_features(iouring_net PUBLIC cxx_std_20)`.
 
@@ -28,13 +26,12 @@ target via `target_compile_options`:
 
 ```
 -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
--Wcast-align -Woverloaded-virtual -Wconversion -Wsign-conversion
--Wnull-dereference -Wdouble-promotion -Wformat=2 -Wimplicit-fallthrough
--Werror
+-Wcast-align -Woverloaded-virtual -Wnull-dereference
+-Wdouble-promotion -Wformat=2 -Wimplicit-fallthrough
 ```
 
-Ratcheted in. Not all enabled at v0 — turn on incrementally as code
-matures.
+Ratcheted in. `-Werror`, `-Wconversion`, and `-Wsign-conversion` are
+explicitly deferred at v0 and enabled per-subsystem as code matures.
 
 ---
 
@@ -42,7 +39,9 @@ matures.
 
 | Preset    | Flags                                            | Use                                   |
 |-----------|--------------------------------------------------|---------------------------------------|
-| `default` | `-O0 -g -fsanitize=address,undefined`            | dev default                           |
+| `default` (test preset) | `default` build + `LSAN_OPTIONS=detect_leaks=0` | stable tests in ptrace/sandboxed environments |
+| `default-lsan` (test preset) | `default` build (LeakSanitizer enabled) | strict leak checks where ptrace is available |
+| `default-no-lsan` (test preset) | alias of stable mode (`detect_leaks=0`) | compatibility with older docs/commands |
 | `tsan`    | `-O1 -g -fsanitize=thread`                       | mandatory for any concurrency PR      |
 | `release` | `-O2 -DNDEBUG -fuse-ld=lld`                      | release/perf builds                   |
 
@@ -137,11 +136,24 @@ binding declaration.
 
 ## Install layout
 
-CMake copies `src/**/*.h` to `<prefix>/include/iouring_net/`,
-preserving relative paths. External consumers write:
+CMake installs:
+
+- `lib/libiouring_net.a`
+- headers from `src/**/*.h{,pp}` to `<prefix>/include/iouring_net/`
+- export targets + package files to
+  `<prefix>/lib/cmake/iouring_net/`
+
+External consumers write:
 
 ```cpp
 #include <iouring_net/data_structure/ring_buffer.h>
+```
+
+Basic consume flow:
+
+```cmake
+find_package(iouring_net CONFIG REQUIRED)
+target_link_libraries(my_target PRIVATE iouring_net::iouring_net)
 ```
 
 No separate `include/` directory inside the source tree — see
