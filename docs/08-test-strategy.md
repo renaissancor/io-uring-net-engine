@@ -1,12 +1,24 @@
-# Test strategy
+# 08 — Test strategy
 
-## Purpose
+What gets tested, at which level, with which tools. The bar is: every
+subsystem in this repo has a test that locks its expected behavior
+under the conditions it will face in production. Concurrency code
+passes TSan; memory code passes ASan; the integration tests cover
+wire-format parity with the Windows reference.
 
-Define what gets tested, at which level, with which tools. The bar is:
-every subsystem in this repo has a test that locks its expected behavior
-under the conditions it will face in production. Concurrency code passes
-TSan; memory code passes ASan; the integration tests cover wire-format
-parity with the Windows reference.
+---
+
+## Test layout
+
+- `tests/<category>/` — Catch2 unit + component tests; the tree
+  mirrors `src/<category>/` one file per source file.
+- `tests/integration/` — multi-process loopback tests including the
+  Linux-vs-Windows wire-format-parity test (sends pre-recorded packet
+  fixtures captured from the Windows reference).
+- `benchmarks/` — `nanobench`-driven micro-benchmarks; run on demand,
+  not in CI by default.
+
+---
 
 ## Test pyramid
 
@@ -31,8 +43,10 @@ Per-level expectations:
 | Integration (TCP) | Catch2 v3 + scripts | ASan, UBSan       | <30 s total   |
 | Wire-format parity | Catch2 v3 + recorded fixtures | none | <5 s total    |
 
-Benchmarks live in `benchmarks/` and are explicitly **not** in the test
-suite. They run on demand.
+Benchmarks live in `benchmarks/` and are explicitly **not** in the
+test suite. They run on demand.
+
+---
 
 ## Per-subsystem coverage targets
 
@@ -54,11 +68,13 @@ suite. They run on demand.
 | Packet handler      | id dispatch; unknown id; codec round-trip; codec size mismatch     |
 | Job queue           | FIFO order; multi-thread push correctness                          |
 
+---
+
 ## Wire-format parity test
 
-The single most important integration test. Captures a binary fixture of
-real Windows-reference packet streams and replays them through the Linux
-server.
+The single most important integration test. Captures a binary fixture
+of real Windows-reference packet streams and replays them through the
+Linux server.
 
 **Fixture capture.** From the Windows reference build, run a short
 client/server session and `tcpdump -w fixtures/echo_session.pcap`.
@@ -74,6 +90,8 @@ golden expected list.
 endianness mistake, alignment glitch) breaks parity but might pass
 isolated unit tests. Parity catches it.
 
+---
+
 ## Sanitizers
 
 | Sanitizer | When run                              | Notes                          |
@@ -87,6 +105,8 @@ isolated unit tests. Parity catches it.
 ASan and TSan are mutually exclusive (cannot link the same binary with
 both). Run two CI jobs.
 
+---
+
 ## TSan policy
 
 - Every concurrent test must pass under TSan.
@@ -94,14 +114,17 @@ both). Run two CI jobs.
   are silenced via per-file annotations in
   `tests/sanitizer-suppressions.txt`. Project code does not get
   suppressions — fix the race or remove the test.
-- Lock-free code (the Treiber stack, the SPSC ring buffer) is the most
-  TSan-fragile area. Hand-annotate with explicit memory orders and run
-  on every commit that touches those files.
+- Lock-free code (the Treiber stack, the SPSC ring buffer) is the
+  most TSan-fragile area. Hand-annotate with explicit memory orders
+  and run on every commit that touches those files.
+
+---
 
 ## Continuous fuzzing
 
 Out of scope for v1, but the framing code is designed to be
 fuzz-friendly:
+
 - `peek_frame(std::span<const std::byte>)` is a pure function over
   bytes.
 - `packet_codec<T>::decode(frame_view)` is pure.
@@ -109,15 +132,17 @@ fuzz-friendly:
 Wire libFuzzer harnesses for both at v2. Catch the long tail of weird
 inputs that property tests miss.
 
+---
+
 ## Open questions
 
 1. **Network-level integration tests in CI.** Loopback (`127.0.0.1`)
    integration tests are reliable. Multi-host tests (NIC offload,
    RSS-aware listener) require dedicated hardware — out of scope for
    open-source CI.
-2. **Stress test duration.** A 60-second stress test catches more bugs
-   than a 1-second one but costs CI minutes. Run a 5-second variant on
-   every PR; a 10-minute variant nightly.
+2. **Stress test duration.** A 60-second stress test catches more
+   bugs than a 1-second one but costs CI minutes. Run a 5-second
+   variant on every PR; a 10-minute variant nightly.
 3. **Property-based testing.** `rapidcheck` integrates cleanly with
    Catch2. Adopt for framing, ring buffer, and codec round-trips.
 4. **Coverage gates.** No coverage gate at v1. Test thoroughness is

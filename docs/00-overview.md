@@ -151,6 +151,13 @@ This is a design-doc honesty marker, not a problem.
   uses go through `io_uring` directly; we do not export an async-everything
   surface in v1.
 - **Windows compatibility.** None.
+- **Stable ABI.** Static link or rebuild against your version. No
+  versioned ABI guarantee in v1.
+- **Wait-free anything.** Lock-free is the bar; wait-free is a separate
+  research project.
+- **Magic byte (0x89) in packet header.** SelectServer's reference
+  framer uses one; we explicitly do not. Application-level packet IDs
+  do the same job. See `wiki/network/packet_framing.md`.
 
 ---
 
@@ -163,7 +170,12 @@ This is a design-doc honesty marker, not a problem.
 - **C++20 only.** No C++23 in the public surface. The `expected` API is
   provided by `tl::expected` (vendored); `std::print` is provided by
   `{fmt}`. Both are API-compatible with the C++23 stdlib equivalents.
-- See `02-build-and-toolchain.md` for the full matrix.
+- See `02-build-and-toolchain.md` for the language standard, kernel
+  matrix, and dependency floors. `06-system-setup.md` covers
+  cross-distro install. `05-cmake.md` covers CMake conventions and
+  `cmake/deps.cmake`. `07-ci-and-reproducibility.md` covers the CI
+  matrix and the reproducibility envelope (Dockerfile, devcontainer,
+  `version-snapshot.txt`).
 
 ---
 

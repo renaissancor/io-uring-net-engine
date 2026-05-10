@@ -119,8 +119,7 @@ iouring-net-lib/
 ├── examples/echo_server/
 ├── benchmarks/
 ├── docs/                 library-wide documentation
-│   ├── 00-overview.md ... 04-coding-style.md
-│   └── testing/test-strategy.md
+│   └── 00-overview.md ... 08-test-strategy.md
 ├── wiki/                 per-source-file design docs (mirror of src/)
 │   ├── data_structure/<name>.md
 │   ├── memory/<name>.md
@@ -132,12 +131,16 @@ iouring-net-lib/
 ```
 
 Two-tier documentation:
-- **`docs/`** — library-wide. Numbered top-level docs (`00-overview`,
-  `01-windows-to-linux-mapping`, `02-build-and-toolchain`,
-  `03-second-pass-findings`, `04-coding-style`) plus the test strategy.
+- **`docs/`** — library-wide. Numbered top-level docs covering scope
+  (`00`), Win32 mapping (`01`), build/kernel/deps (`02`), this style
+  guide (`04`), CMake (`05`), system setup (`06`), CI and
+  reproducibility (`07`), and test strategy (`08`). The `03` slot is
+  empty (a retrospective journal was folded in and dropped). See
+  `docs/README.md` for the full index.
 - **`wiki/`** — per-file. Each meaningful source file has a peer design
   doc at `wiki/<category>/<name>.md` describing rationale, invariants,
-  reference-repo origin, and any quirks of that one file.
+  reference-repo origin, and any quirks of that one file. See
+  `wiki/README.md` for the wiki ↔ src/ mapping table.
 
 `#include` paths are project-relative inside `src/`:
 

@@ -59,34 +59,32 @@ Out of scope for v1: ODBC / database layer, MMO room logic, deadlock profiler
 
 Start with `docs/00-overview.md`. Then `docs/01-windows-to-linux-mapping.md`
 for the master API mapping table. After that, read whichever subsystem
-interests you — they are designed to be readable independently.
+interests you — wiki specs are designed to be readable independently.
+
+Cross-cutting documentation lives in `docs/`; per-source-file design
+specs live in `wiki/`. Each directory has its own `README.md` index.
 
 ```
-docs/
-├── 00-overview.md                    # scope, non-goals, subsystem map
-├── 01-windows-to-linux-mapping.md    # master API mapping table
-├── 02-build-and-toolchain.md         # CMake, liburing, kernel reqs
-├── primitives/
-│   ├── memory-pool.md
-│   ├── object-pool.md
-│   ├── ring-buffer.md
-│   ├── serial-buffer.md
-│   ├── sync-primitives.md
-│   ├── lock-free-stack.md
-│   ├── deadlock-profiler.md
-│   └── leak-tracker.md
-├── runtime/
-│   ├── thread-context.md
-│   ├── job-queue.md
-│   └── coroutine-task.md
-└── network/
-    ├── io-uring-reactor.md
-    ├── session.md
-    ├── listener-and-service.md
-    ├── packet-framing.md
-    └── packet-handler.md
-docs/testing/
-└── test-strategy.md
+docs/                  ← cross-cutting design + operations
+├── README.md          ← index of every doc + suggested reading paths
+├── 00-overview.md                    # scope, subsystem map, tenets, non-goals
+├── 01-windows-to-linux-mapping.md    # master Win32 → Linux API mapping
+├── 02-build-and-toolchain.md         # language, kernel, deps, repo layout
+├── 04-coding-style.md                # naming, error model, namespaces, aliases
+├── 05-cmake.md                       # CMake target, presets, deps.cmake
+├── 06-system-setup.md                # distro install runbook + smoke tests
+├── 07-ci-and-reproducibility.md      # CI matrix, Dockerfile, version-snapshot
+└── 08-test-strategy.md               # test pyramid, coverage targets, sanitizers
+
+wiki/                  ← per-source-file design specs (one per planned src/ file)
+├── README.md          ← wiki ↔ src/ mapping table
+├── data_structure/    ring_buffer, serial_buffer
+├── memory/            memory_pool, object_pool, leak_tracker
+├── sync/              sync_primitives, lock_free_stack
+├── diagnostic/        deadlock_profiler
+├── runtime/           coroutine_task, job_queue, thread_context
+└── network/           io_uring_reactor, listener_and_service, session,
+                       packet_framing, packet_handler
 ```
 
 ---
