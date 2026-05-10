@@ -15,10 +15,13 @@ cmake --build --preset default
 ctest --preset default
 ```
 
-`scripts/kernel-probe.sh` prints `IORING_FEAT_*` flags + opcode
-availability + per-flag trial-submit results so contributors know what
-their dev kernel supports without reading kernel docs. See
-`02-build-and-toolchain.md` § "Three-layer feature detection".
+`scripts/kernel-probe.sh` is the bash-only first-pass probe (kernel
+version + `io_uring_disabled` sysctl + `RLIMIT_MEMLOCK` / `NOFILE` +
+liburing version, with a SATISFIED / NOT SATISFIED verdict). The full
+three-layer C-level probe (FEAT bits + `io_uring_get_probe` opcode
+bitmap + per-flag trial-submit) lands when reactor code arrives —
+see `02-build-and-toolchain.md` § "Three-layer feature detection"
+for the eventual target shape.
 
 ---
 
@@ -128,10 +131,10 @@ uname -r                                # expect 5.19+; WSL2 default is 6.6
 cat /proc/sys/kernel/io_uring_disabled  # must be 0
 ```
 
-`scripts/kernel-probe.sh` (TBD) prints the runtime probe output —
-`IORING_FEAT_*` bits, `io_uring_get_probe()` opcode bitmap, and
-per-flag trial-submit results. See `02-build-and-toolchain.md` §
-"Three-layer feature detection" for the expected output shape.
+`scripts/kernel-probe.sh` runs the bash-only probe (currently — see
+note above). The full three-layer C-level probe lands with reactor
+code; see `02-build-and-toolchain.md` § "Three-layer feature
+detection" for the target output shape.
 
 ---
 

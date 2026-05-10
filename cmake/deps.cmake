@@ -67,9 +67,11 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Catch2
+# Catch2 — find_package honors the documented 3.4.0 floor; FetchContent
+# fallback exposes Catch.cmake via CMAKE_MODULE_PATH so include(Catch)
+# and catch_discover_tests work in tests/.
 # ---------------------------------------------------------------------------
-find_package(Catch2 3 CONFIG QUIET)
+find_package(Catch2 ${CATCH2_FLOOR} CONFIG QUIET)
 if(Catch2_FOUND)
   message(STATUS "deps: Catch2 ${Catch2_VERSION} via find_package")
 else()
@@ -79,6 +81,8 @@ else()
     GIT_TAG        ${CATCH2_TAG}
     GIT_SHALLOW    TRUE)
   FetchContent_MakeAvailable(Catch2)
+  # Catch.cmake / catch_discover_tests live in extras/ when FetchContent'd.
+  list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 endif()
 
 # ---------------------------------------------------------------------------

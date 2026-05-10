@@ -126,8 +126,11 @@ the same image and env:
   by host policy (`/proc/sys/kernel/io_uring_disabled == 1`),
   rate-limited by `RLIMIT_MEMLOCK` for fixed buffers, or blocked by
   the container runtime's seccomp profile (some Docker / Kubernetes
-  defaults block `io_uring_setup`). `scripts/kernel-probe.sh` must
-  check all three at startup; the probe failing is a hard refuse-to-run.
+  defaults block `io_uring_setup`). The current bash-only
+  `scripts/kernel-probe.sh` checks the first two; seccomp blockage is
+  detected at reactor startup when `io_uring_setup` returns
+  `-EPERM` / `-ENOSYS`. The full three-layer probe (which lands with
+  reactor code) will surface this at probe time, not first-call time.
 - **`SYS_PTRACE` + `seccomp=unconfined`** in `devcontainer.json` are
   for `gdb attach` and ASan/TSan, not for io_uring itself. Production
   containers should not need either.

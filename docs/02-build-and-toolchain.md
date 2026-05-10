@@ -101,7 +101,20 @@ per-op flag support. The startup probe must run all three of:
 The runtime cache is built once at reactor startup and consulted on
 the hot path with no further syscalls.
 
-### `scripts/kernel-probe.sh` output (target shape)
+### `scripts/kernel-probe.sh` — current and target shape
+
+**Current (bash-only, since commit `4c619b1`):** prints kernel
+version, `/proc/sys/kernel/io_uring_disabled`, `RLIMIT_MEMLOCK`,
+`RLIMIT_NOFILE`, `pkg-config --modversion liburing`, and a
+SATISFIED / NOT SATISFIED verdict against the 5.19+ baseline. No
+opcode probing; no trial-submit. Sufficient as a contributor sanity
+check on a fresh box.
+
+**Target shape (lands with reactor code):** the same header, plus a
+C-level probe that calls `io_uring_queue_init_params`,
+`io_uring_get_probe`, and submits trial SQEs for the per-op flags.
+Below is what the *target* output looks like — current output is a
+strict subset of this.
 
 ```
 $ scripts/kernel-probe.sh
@@ -214,7 +227,7 @@ iouring-net-lib/
 │   └── floor.yml           ← Ubuntu 22.04 + g++-12 floor job
 └── scripts/
     ├── setup.sh            ← distro-aware one-shot install
-    ├── kernel-probe.sh     ← prints IORING_FEAT_* + opcode + trial probe
+    ├── kernel-probe.sh     ← bash sanity probe; full C-level probe lands with reactor
     ├── emit-snapshot.sh    ← emits build/version-snapshot.txt
     └── lint.sh
 ```
