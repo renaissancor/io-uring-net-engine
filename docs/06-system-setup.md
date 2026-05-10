@@ -51,7 +51,7 @@ Verified set after install:
 | `ninja`          | 1.11.1  |                                                                         |
 | `liburing` / `-dev` | 2.5  | meets the 2.5 floor                                                     |
 | `catch2`         | 3.4.0   | `find_package(Catch2 3 REQUIRED)`                                       |
-| `libfmt-dev`     | 10.x    | `find_package(fmt 10 CONFIG)` — formatting library; meets the 10.x floor |
+| `libfmt-dev`     | 9.1.0   | `find_package(fmt 10 CONFIG)` — **below floor** (lacks `fmt::println`, added in fmt 10). FetchContent fallback always triggers on noble (see `05-cmake.md`). The apt install is optional; only useful for the `-lfmt` smoke test in this doc. |
 | `valgrind`       | 3.22.0  | helgrind / drd for concurrency triage                                   |
 | `cppcheck`       | 2.13.0  | secondary static analysis                                               |
 | `gdb`            | 15.1    |                                                                         |
@@ -102,12 +102,19 @@ For an automated runner that handles all of the above, see
 
 | Distro       | liburing | {fmt} | Catch2 | cmake |
 |--------------|----------|-------|--------|-------|
-| Ubuntu 24.04 | 2.5 ✓    | 10.1 ✓ | 3.4 ✓  | 3.28 ✓ |
+| Ubuntu 24.04 | 2.5 ✓    | 9.1 ✗ | 3.4 ✓  | 3.28 ✓ |
 | Ubuntu 22.04 | 2.1 ✗    | 8.1 ✗ | 2.13 ✗ | 3.22 ✗ |
 | Debian 12    | 2.3 ✗    | 9.1 ✗ | 3.4 ✓  | 3.25 ✓ |
 | Fedora 38    | 2.3 ✗    | 9.1 ✗ | 3.3 ✗  | 3.27 ✓ |
 | Fedora 39+   | 2.5 ✓    | 10.x ✓ | 3.4 ✓ | 3.27 ✓ |
 | RHEL/Alma 9  | 2.1 ✗    | 9.1 ✗ | — ✗    | 3.20 ✗ |
+
+`{fmt}` is below floor on every distro except Fedora 39+, so the
+`FetchContent` fallback is the canonical path. This is by design —
+the project's floor is fmt 10 (for `fmt::println`, added in fmt
+10.0). The apt `libfmt-dev` is still worth installing because
+clang-tidy/cppcheck use the headers for source analysis even when
+the build links a vendored fmt.
 
 Cells marked ✗ trigger the `FetchContent` fallback automatically; no
 manual action is needed beyond running the system install command.

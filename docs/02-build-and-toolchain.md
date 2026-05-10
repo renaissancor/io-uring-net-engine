@@ -38,9 +38,13 @@ For the *how* that pairs with this *what*:
     as the project `expected` alias used in the wiki specs and source.
   - `{fmt}` — [`https://github.com/fmtlib/fmt`](https://github.com/fmtlib/fmt)
     (Victor Zverovich; the library `std::format` was modeled after).
-    Apt: `libfmt-dev` (10.x on noble); fallback via `FetchContent`.
-    Use `fmt::format`, `fmt::print`, `fmt::println` everywhere — never
-    `std::format` or `std::print`.
+    Floor is **fmt 10+** (for `fmt::println`, added in 10.0). **No
+    distro currently ships fmt 10 in stable apt** — Ubuntu 24.04 has
+    9.1, Debian 12 has 9.1, RHEL 9 has 9.1, Fedora 39+ is the
+    exception. `find_package(fmt 10 CONFIG)` falls through to
+    `FetchContent` everywhere except Fedora 39+; this is by design
+    (see `05-cmake.md`). Use `fmt::format`, `fmt::print`,
+    `fmt::println` everywhere — never `std::format` or `std::print`.
 - **Why C++20 over C++23:** broader compiler/distro reach (Ubuntu
   22.04, Debian 12, RHEL 9, Fedora 36+ all build), no dependence on
   bleeding-edge stdlib features, and matches industry-baseline
