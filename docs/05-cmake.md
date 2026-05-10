@@ -69,10 +69,13 @@ include(ExternalProject)
 find_package(PkgConfig REQUIRED)
 find_package(Threads   REQUIRED)   # exposes Threads::Threads (-pthread)
 
-set(LIBURING_FLOOR "2.5")  set(LIBURING_TAG  "liburing-2.5")
-set(FMT_FLOOR     "10")    set(FMT_TAG       "10.2.1")
-set(CATCH2_FLOOR  "3.4.0") set(CATCH2_TAG    "v3.4.0")
-set(TL_EXP_TAG    "v1.1.0")
+set(LIBURING_FLOOR "2.5")
+set(LIBURING_TAG   "liburing-2.5")
+set(FMT_FLOOR      "10")
+set(FMT_TAG        "10.2.1")
+set(CATCH2_FLOOR   "3.4.0")
+set(CATCH2_TAG     "v3.4.0")
+set(TL_EXP_TAG     "v1.1.0")
 
 # liburing — autotools fallback when the system version is below floor
 pkg_check_modules(LIBURING IMPORTED_TARGET liburing>=${LIBURING_FLOOR})
