@@ -107,6 +107,43 @@ both). Run two CI jobs.
 
 ---
 
+## TSan on Ubuntu 24.04 (and other high-ASLR kernels)
+
+ThreadSanitizer hardcodes its address-space layout at link time. On
+Ubuntu 24.04 the kernel default is `vm.mmap_rnd_bits=32` (32 bits of
+ASLR entropy), which can place mmap regions outside TSan's reserved
+ranges. The binary then aborts on first run with:
+
+```
+FATAL: ThreadSanitizer: unexpected memory mapping 0x<addr>-0x<addr>
+```
+
+This is **not a project bug** — it's a kernel-config / TSan-design
+mismatch documented upstream. Two equivalent workarounds:
+
+```bash
+# Per-process — no root, no global state change. Recommended for ctest.
+setarch "$(uname -m)" -R ctest --preset tsan
+
+# Or, system-wide — once per host, requires root, persists across reboots
+# (until reset by Ubuntu kernel updates):
+sudo sysctl -w vm.mmap_rnd_bits=28
+```
+
+`tests/CMakeLists.txt` uses `catch_discover_tests(... DISCOVERY_MODE
+PRE_TEST)` so the build itself stays green; the workaround is only
+needed when tests *run*. CMake 3.29's `TEST_LAUNCHER` would let us
+auto-prefix every test with `setarch -R`; until that is the floor,
+the invocation is manual.
+
+CI workaround: the `linux-gcc-tsan` GHA job does
+`echo 0 | sudo tee /proc/sys/kernel/randomize_va_space` (or the
+`sysctl -w vm.mmap_rnd_bits=28` form) once before `ctest --preset
+tsan`. See `.github/workflows/floor.yml` for the pattern when the
+TSan job lands.
+
+---
+
 ## TSan policy
 
 - Every concurrent test must pass under TSan.

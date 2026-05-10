@@ -49,7 +49,7 @@ Verified set after install:
 | `clang++-18`     | 18.1.3  | C++20; well above the clang-14 floor                                    |
 | `clang-tidy-18`  | 18.1.3  | invoke as `clang-tidy-18`                                               |
 | `clang-format-18`| 18.1.3  | invoke as `clang-format-18`                                             |
-| `lld-18`         | 18.1.3  | `-fuse-ld=lld-18` for the release preset                                |
+| `lld-18`         | 18.1.3  | `-fuse-ld=lld` (no version) for the release preset; works on g++-13/14 + clang-18 |
 | `cmake`          | 3.28.3  | meets the 3.25+ floor                                                   |
 | `ninja`          | 1.11.1  |                                                                         |
 | `liburing` / `-dev` | 2.5  | meets the 2.5 floor                                                     |
@@ -147,6 +147,21 @@ detection" for the target output shape.
   (`https://apt.llvm.org/`). Useful but not required.
 - **`nanobench`** — not in apt. Vendored via `FetchContent` once
   `benchmarks/` exists. Not blocking v1.
+
+### TSan on Ubuntu 24.04 (`tsan` preset)
+
+The TSan binary aborts on first run with `FATAL: ThreadSanitizer:
+unexpected memory mapping` because noble's `vm.mmap_rnd_bits=32` puts
+mmap regions outside TSan's hardcoded reserved range. The build is
+green; only `ctest --preset tsan` is affected. Run TSan tests via:
+
+```bash
+setarch "$(uname -m)" -R ctest --preset tsan
+# or system-wide (requires root, persists until reboot):
+sudo sysctl -w vm.mmap_rnd_bits=28
+```
+
+Full discussion in `08-test-strategy.md` § "TSan on Ubuntu 24.04".
 
 ---
 

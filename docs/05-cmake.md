@@ -44,7 +44,7 @@ matures.
 |-----------|--------------------------------------------------|---------------------------------------|
 | `default` | `-O0 -g -fsanitize=address,undefined`            | dev default                           |
 | `tsan`    | `-O1 -g -fsanitize=thread`                       | mandatory for any concurrency PR      |
-| `release` | `-O2 -DNDEBUG -fuse-ld=lld-18`                   | release/perf builds                   |
+| `release` | `-O2 -DNDEBUG -fuse-ld=lld`                      | release/perf builds                   |
 
 ASan and TSan **cannot** combine in the same binary. Run two CI jobs.
 See `07-ci-and-reproducibility.md` for the matrix.
