@@ -7,10 +7,33 @@ shows up in AI inference serving, distributed runtimes, and async backends —
 the same lessons that the Windows IOCP family of reference projects teaches,
 ported to a 2026-relevant stack.
 
-This repository contains **design documents only** at this stage. No code has
-been written. Each subsystem has a short markdown spec under `docs/` that is
-intended to be detailed enough to implement from end to end without
-re-deriving design.
+The CMake scaffolding, dependency graph (`liburing`, `{fmt}`, `Catch2`,
+`tl::expected`), CI floor job, and an `examples/hello/` smoke executable
+have landed. Subsystem source files (memory pool, ring buffer, reactor,
+session, …) have **design specs under `wiki/<category>/<name>.md`** and
+are not yet implemented — the wiki specs are detailed enough to build
+each one without re-deriving design.
+
+---
+
+## Quick start
+
+Verified on Ubuntu 24.04 / WSL2 (kernel 6.6+) with `g++-12` or newer and
+`liburing-dev >= 2.5`. See `docs/06-system-setup.md` for the full
+distro-aware install runbook.
+
+```bash
+make hello                     # configure + build + run examples/hello
+make test                      # configure + build + ctest (default preset)
+make test  PRESET=floor        # same, but on the gcc-12 floor preset
+make build PRESET=release      # release build, no sanitizers
+make help                      # list every target
+```
+
+The `make` targets are thin wrappers around `cmake --preset …`,
+`cmake --build --preset …`, and `ctest --preset …`; the raw CMake
+commands work too. Build directories live under `build/<preset>/` and
+are gitignored.
 
 ---
 
@@ -91,7 +114,11 @@ wiki/                  ← per-source-file design specs (one per planned src/ fi
 
 ## Status
 
-- Design docs: in progress.
-- First code: not yet written.
-- First milestone: minimal `io_uring` reactor that echoes a single TCP
-  connection. Gated on completion of the design doc set.
+- Design docs: stable across `docs/` and `wiki/`.
+- Build scaffolding: landed (CMake, presets, deps graph, CI floor job,
+  devcontainer, smoke test, `examples/hello/`).
+- Subsystem code: not yet written.
+- First subsystem milestone: a leaf primitive from `wiki/data_structure/`
+  or `wiki/memory/` (likely `ring_buffer`), with full Catch2 coverage.
+- First end-to-end milestone: minimal `io_uring` reactor that echoes a
+  single TCP connection.

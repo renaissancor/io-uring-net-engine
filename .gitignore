@@ -15,7 +15,6 @@ CMakeFiles/
 CMakeScripts/
 cmake_install.cmake
 install_manifest.txt
-Makefile
 compile_commands.json
 # CMake user-local preset overrides — never committed (per CMake convention)
 CMakeUserPresets.json

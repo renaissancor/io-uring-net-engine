@@ -78,10 +78,16 @@ install(FILES
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/iouring_net)
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests + examples
 # ---------------------------------------------------------------------------
-option(IOURING_NET_BUILD_TESTS "Build the iouring_net test suite" ON)
+option(IOURING_NET_BUILD_TESTS    "Build the iouring_net test suite"       ON)
+option(IOURING_NET_BUILD_EXAMPLES "Build the iouring_net example programs" ON)
+
 if(IOURING_NET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+if(IOURING_NET_BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()
