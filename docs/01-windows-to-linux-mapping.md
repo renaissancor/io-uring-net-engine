@@ -222,15 +222,19 @@ negated value of `cqe->res`).
 
 This project uses `std::error_code` as the public surface (see
 `wiki/sync/sync_primitives.md` and `wiki/network/io_uring_reactor.md`
-for the error category). I/O failures return `std::expected<T,
-std::error_code>`; bugs throw.
+for the error category). I/O failures return `expected<T,
+std::error_code>` (project alias resolving to `tl::expected` — see
+`docs/02-build-and-toolchain.md` polyfill section); bugs throw.
 
 ---
 
 ## Net new on Linux (no Win32 analog needed)
 
-These are Linux capabilities used by this project that have no Win32 ancestor
-to map from:
+These are **Linux-specific** syscalls (not portable POSIX) used by this
+project that have no Win32 ancestor to map from. On macOS / *BSD they
+require alternative APIs (`kqueue`, `dispatch_source_t`, `pthread_setname_np`
+with different signatures, etc.) — out of scope for this project, which
+is Linux-only:
 
 - `eventfd` — for cross-thread wakeup before kernel 5.18.
 - `signalfd` — for handling termination signals inside the reactor.
@@ -238,8 +242,12 @@ to map from:
 - `epoll_create1(EPOLL_CLOEXEC)` — only used as a fallback or for hybrid
   designs; primary path is `io_uring`.
 - `prctl(PR_SET_NAME, ..)` — naming worker threads for `ps` / `top` / `perf`.
-- `IORING_FEAT_*` capability probing — runtime detection of kernel support
-  for multishot accept, fixed buffers, etc.
+- io_uring runtime feature detection — three-layer probe at startup:
+  `io_uring_params.features` for `IORING_FEAT_*` infrastructure bits,
+  `io_uring_get_probe()` for opcode availability, and trial-submit for
+  per-op flags (`IORING_ACCEPT_MULTISHOT`, `IORING_RECV_MULTISHOT`,
+  `IOSQE_BUFFER_SELECT`). FEAT bits alone are insufficient.
+  See `docs/02-build-and-toolchain.md` "Three-layer feature detection".
 
 ---
 

@@ -163,11 +163,32 @@ The hot path is per-connection recv/send dispatch. Everything else is
 
 **Errors and exceptions**
 - Hot-path methods are `noexcept`.
-- I/O failures return `std::expected<T, std::error_code>`.
+- I/O failures return `expected<T, std::error_code>` (project alias —
+  see "Project type aliases" below).
 - Programming errors throw — but only off the hot path (setup, parsing,
   configuration).
 - "If `bad_alloc`, terminate" is acceptable for primitive containers;
   call it out in a comment on the constructor that allocates.
+
+**Project type aliases.** `src/error/expected.h` re-exports the
+polyfills as bare names so call sites stay future-proof:
+
+```cpp
+// src/error/expected.h
+#pragma once
+#include <tl/expected.hpp>
+
+template <class T, class E>
+using expected = tl::expected<T, E>;
+
+template <class E>
+using unexpected = tl::unexpected<E>;
+```
+
+When C++23 / libstdc++-15+ is the floor, the body becomes a `using`
+declaration over `std::expected` / `std::unexpected` and no call site
+changes. Always write `expected` / `unexpected` in headers and source —
+never `tl::expected` or `std::expected` directly.
 
 **Allocation**
 - No hidden allocations on the hot path. Per-connection state goes
@@ -194,10 +215,18 @@ The hot path is per-connection recv/send dispatch. Everything else is
 
 ## C++ standard
 
-- Mandatory: **C++20** — coroutines, concepts, ranges, `std::jthread`,
-  `std::stop_token`, designated initializers.
-- Opportunistic: **C++23** — `std::expected`, `std::print`, behind
-  `__cpp_lib_*` feature tests until both compilers clear baseline.
+- **C++20. Locked.** Coroutines, concepts, ranges, `std::jthread`,
+  `std::stop_token`, designated initializers, `<bit>`.
+- **`<format>` is not part of the baseline.** libstdc++-12 (the floor)
+  ships an incomplete `std::format`. All formatted output goes through
+  `{fmt}` (`fmt::format`, `fmt::print`, `fmt::println`).
+- **No C++23.** Two C++23-shaped APIs the design uses are provided by
+  vendored polyfills:
+  - `expected<T, E>` — `tl::expected` (Sy Brand, header-only).
+  - `print` / `println` — `{fmt}` (`fmt::print`, `fmt::println`).
+  Both are drop-in API-compatible with the C++23 stdlib equivalents,
+  so a future migration to `std::expected` / `std::print` is a typedef
+  swap.
 
 Prefer `std::` over project-rolled where semantics match. The wrapper
 pattern exists where the platform primitive (spin count, fixed

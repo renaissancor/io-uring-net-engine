@@ -101,8 +101,8 @@ typically 100–300 bytes per task.)
 
 **Exceptions.** A coroutine that throws stores the exception in the
 promise. `await_resume` rethrows. This is the C++ orthodoxy. We do *not*
-short-circuit to `std::expected` at the language level — coroutines that
-want to propagate errors as values do `co_return std::expected<...>`.
+short-circuit to `expected` at the language level — coroutines that
+want to propagate errors as values do `co_return expected<...>`.
 
 **`sync_wait`.** Used only at top of a thread (main, tests). Implements
 a manual-reset event: starts the task, blocks the calling thread on the
@@ -144,7 +144,7 @@ inside the reactor.
 3. **`task<T>` vs. `shared_task<T>`.** `task<T>` is single-consumer. If we
    need a multi-consumer task (one producer, many `co_await`ers), define
    `shared_task<T>` separately. Out of scope for v1.
-4. **Propagating `std::expected` through awaiters.** Do reactor I/O
-   awaiters return `std::expected<bytes_view, std::error_code>` directly,
+4. **Propagating `expected` through awaiters.** Do reactor I/O
+   awaiters return `expected<bytes_view, std::error_code>` directly,
    or throw `std::system_error` on failure? **Decision: return
-   `std::expected`.** Errors are normal control flow.
+   `expected`.** Errors are normal control flow.

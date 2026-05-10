@@ -37,7 +37,7 @@ public:
     void shutdown() noexcept;
 
     // Awaitable I/O ops — return objects whose `co_await` produces
-    //   std::expected<T, std::error_code>
+    //   expected<T, std::error_code>
     auto async_accept(int listen_fd);
     auto async_connect(int fd, const sockaddr* addr, socklen_t len);
     auto async_recv(int fd, std::span<std::byte> buf, int flags = 0);
@@ -61,9 +61,24 @@ private:
 
 ## Linux design
 
-**Setup.** `io_uring_queue_init(entries, &ring_, flags)`. Probe
-capabilities at startup via `io_uring_get_probe`; cache support flags
-(multishot accept, multishot recv, fixed buffers, `IOSQE_BUFFER_SELECT`).
+**Setup.** `io_uring_queue_init_params(entries, &ring_, &params)` —
+must capture `params.features` for `IORING_FEAT_*` bits in addition to
+creating the ring. Capabilities are then probed in three layers and
+cached in a `reactor::caps` struct for hot-path consultation:
+
+1. **`params.features`** — `IORING_FEAT_FAST_POLL`, `_NATIVE_WORKERS`,
+   `_CQE_SKIP`, `_LINKED_FILE`, `_RSRC_TAGS`.
+2. **`io_uring_get_probe(ring_)`** — bitmap of supported opcodes.
+   Required for `IORING_OP_ACCEPT`, `_RECV`, `_SEND`, `_MSG_RING`,
+   `_ASYNC_CANCEL`, and the `IORING_REGISTER_PBUF_RING` register op.
+3. **Trial-submit** for per-op flags not surfaced by either:
+   `IORING_ACCEPT_MULTISHOT`, `IORING_RECV_MULTISHOT`, and
+   `IOSQE_BUFFER_SELECT` — submit one SQE against a fixture fd and
+   check that the CQE is not `-EINVAL` / `-EOPNOTSUPP`.
+
+If the kernel fails the 5.19 baseline (no multishot accept, no
+provided-buffer ring), the reactor refuses to start and prints the
+`scripts/kernel-probe.sh` output for diagnostics.
 
 **`user_data` convention.** Every SQE encodes a tagged pointer:
 
@@ -94,7 +109,7 @@ struct recv_awaiter {
         io_uring_sqe_set_data(sqe, encode(op_kind::recv, op));
     }
 
-    std::expected<size_t, std::error_code> await_resume() {
+    expected<size_t, std::error_code> await_resume() {
         return op->result;          // populated by reactor on CQE
     }
 };
@@ -111,8 +126,8 @@ void run() {
         io_uring_for_each_cqe(&ring_, head, cqe) {
             auto [kind, op] = decode(cqe->user_data);
             op->result = (cqe->res < 0)
-                ? std::unexpected(make_error(-cqe->res))
-                : std::expected<size_t, std::error_code>(cqe->res);
+                ? unexpected(make_error(-cqe->res))
+                : expected<size_t, std::error_code>(cqe->res);
             op->coro.resume();           // back into the coroutine
             op_slab_.free(op);
         }
@@ -121,9 +136,12 @@ void run() {
 }
 ```
 
-**Multishot accept.** When `IORING_FEAT_ACCEPT_MULTISHOT` is available
-(kernel 5.19+), one accept SQE produces multiple CQEs (one per accepted
-connection). The op_block stays alive until the listener tears down.
+**Multishot accept.** When the trial-submit probe confirms
+`IORING_ACCEPT_MULTISHOT` works (kernel 5.19+), one accept SQE produces
+multiple CQEs (one per accepted connection). The op_block stays alive
+until the listener tears down. Note: there is no `IORING_FEAT_ACCEPT_MULTISHOT`
+bit — multishot acceptance is detected via the trial-submit path
+described in **Setup**, not via `params.features`.
 
 **Multishot recv with provided buffers.** Kernel 6.0+ feature. Requires
 `io_uring_register_buf_ring(ring_, ...)` once and submitting recv with
@@ -137,9 +155,13 @@ len, fd)` (kernel 5.18+). v1 has one reactor; this is wired but unused
 until v2.
 
 **Shutdown.** `shutdown()` sets `stop_requested_` and submits a no-op
-SQE to wake the loop. The loop exits after the next CQE batch. Ops in
-flight are canceled via `io_uring_prep_cancel_all` (kernel 6.0+) or
-manually canceled per-op.
+SQE to wake the loop. The loop exits after the next CQE batch. **Baseline
+shutdown path (kernel 5.19+):** iterate the live `op_slab_` and submit
+one `io_uring_prep_cancel(sqe, op, 0)` per op, then drain. **Optional
+optimization (kernel 6.0+):** if `caps.has_cancel_all` is true, replace
+the per-op loop with a single `io_uring_prep_cancel_all` against
+`IORING_ASYNC_CANCEL_ANY`. Detected via `io_uring_get_probe` — see
+**Setup**.
 
 ## Concurrency & ownership
 

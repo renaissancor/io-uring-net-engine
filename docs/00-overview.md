@@ -108,8 +108,11 @@ This is a design-doc honesty marker, not a problem.
    single-threaded. Multi-threaded support is a v2 concern, designed for but
    not implemented yet.
 
-3. **`std::expected<T, std::error_code>` for I/O errors, exceptions for
-   programming errors.** I/O failure is normal control flow; bugs are not.
+3. **`expected<T, std::error_code>` for I/O errors, exceptions for
+   programming errors.** I/O failure is normal control flow; bugs are
+   not. Project `expected` is `tl::expected` (see
+   `02-build-and-toolchain.md` polyfill section); the call sites are
+   API-identical to a future `std::expected`.
 
 4. **No hidden allocations on the hot path.** All per-connection allocation
    goes through the memory pool. Coroutine frames are pool-allocated where
@@ -157,7 +160,9 @@ This is a design-doc honesty marker, not a problem.
   `IOSQE_BUFFER_SELECT`). 5.10+ minimum for basic `io_uring` correctness.
 - WSL2 is fine for development; honest performance numbers belong on bare
   metal or a cloud VM.
-- C++20 mandatory. C++23 used opportunistically (`std::expected`).
+- **C++20 only.** No C++23 in the public surface. The `expected` API is
+  provided by `tl::expected` (vendored); `std::print` is provided by
+  `{fmt}`. Both are API-compatible with the C++23 stdlib equivalents.
 - See `02-build-and-toolchain.md` for the full matrix.
 
 ---

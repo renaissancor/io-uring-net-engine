@@ -70,7 +70,7 @@ Pure data structure — no system calls, no synchronization. Same on Linux as
 on Windows.
 
 **Bounds checking.** Every write checks `can_fit`. Failure returns
-`std::expected<void, std::errc::value_too_large>` from a future `try_write`
+`expected<void, std::errc::value_too_large>` from a future `try_write`
 variant; the simple `write` path asserts in debug, truncates in release
 (decision pending — see open questions).
 
@@ -96,7 +96,7 @@ return. Misalignment of `T` inside the buffer is therefore impossible.
 - Unit: `reserve<Header>` + payload write + back-patch sequence; assert
   `data()` matches the expected wire bytes.
 - Unit: overflow path — fill to capacity, attempt one more byte, assert
-  the chosen failure mode (assert / `std::expected` / truncate).
+  the chosen failure mode (assert / `expected` / truncate).
 - Fuzz: random write sequences of mixed types up to capacity; check
   `size() == sum(write_n)` and no out-of-bounds writes.
 
@@ -104,10 +104,10 @@ return. Misalignment of `T` inside the buffer is therefore impossible.
 
 1. **Failure mode on overflow.** Three options:
    - **Assert in debug, undefined in release.** Current reference behavior.
-   - **`std::expected<void, std::errc>` return.** Forces every call site
+   - **`expected<void, std::errc>` return.** Forces every call site
      to check.
    - **Truncate silently.** Bad — masks bugs.
-   Recommendation: `try_write` returns `std::expected`; `write` asserts.
+   Recommendation: `try_write` returns `expected`; `write` asserts.
    Two-API surface, caller picks based on context.
 2. **Static N vs. runtime N.** Reference is fixed at 4096. We make it a
    template parameter so `SerialBuffer<512>` is a valid stack-friendly
