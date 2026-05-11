@@ -12,13 +12,14 @@
 PRESET    ?= default
 BUILD_DIR := build/$(PRESET)
 
-.PHONY: help configure build test hello clean distclean
+.PHONY: help configure build test test-sds hello clean distclean
 
 help:
 	@echo "Targets (override preset with PRESET=floor|default|release|tsan):"
 	@echo "  make configure  — cmake configure (preset=$(PRESET))"
 	@echo "  make build      — cmake build      (preset=$(PRESET))"
 	@echo "  make test       — ctest            (preset=$(PRESET))"
+	@echo "  make test-sds   — run only sds:: data-structure tests"
 	@echo "  make hello      — build and run examples/hello"
 	@echo "  make clean      — remove the current preset's build dir"
 	@echo "  make distclean  — remove every build dir"
@@ -31,6 +32,10 @@ build: configure
 
 test: build
 	ctest --preset $(PRESET)
+
+test-sds: build
+	@echo "--- running sds:: data-structure tests ---"
+	$(BUILD_DIR)/tests/iouring_net-test "[sds]"
 
 hello: build
 	@echo "--- running iouring_net-hello ---"

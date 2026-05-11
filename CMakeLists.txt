@@ -24,7 +24,8 @@ include(compiler-warnings)
 # Library target
 # ---------------------------------------------------------------------------
 add_library(iouring_net STATIC
-  src/_placeholder.cpp)
+  src/_placeholder.cpp
+  src/sds/ring_buffer.cpp)
 add_library(iouring_net::iouring_net ALIAS iouring_net)
 
 target_compile_features(iouring_net PUBLIC cxx_std_20)
