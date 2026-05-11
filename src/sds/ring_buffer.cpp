@@ -28,6 +28,7 @@ void ring_buffer::resize_buffer(std::size_t new_capacity) noexcept {
 }
 
 std::size_t ring_buffer::enqueue(const char* src, std::size_t bytes) noexcept {
+    if (bytes == 0) return 0;
     if (bytes > free_size()) {
         std::size_t new_capacity = capacity_ * 2;
         while (new_capacity - used_size() - 1 < bytes) new_capacity *= 2;
@@ -46,6 +47,7 @@ std::size_t ring_buffer::enqueue(const char* src, std::size_t bytes) noexcept {
 }
 
 std::size_t ring_buffer::dequeue(char* dst, std::size_t bytes) noexcept {
+    if (bytes == 0) return 0;
     if (bytes > used_size()) bytes = used_size();
     std::size_t first = std::min(bytes, capacity_ - head_);
     std::memcpy(dst, buffer_ + head_, first);
@@ -60,6 +62,7 @@ std::size_t ring_buffer::dequeue(char* dst, std::size_t bytes) noexcept {
 }
 
 std::size_t ring_buffer::peek(char* dst, std::size_t bytes) const noexcept {
+    if (bytes == 0) return 0;
     if (bytes > used_size()) bytes = used_size();
     std::size_t first = std::min(bytes, capacity_ - head_);
     std::memcpy(dst, buffer_ + head_, first);

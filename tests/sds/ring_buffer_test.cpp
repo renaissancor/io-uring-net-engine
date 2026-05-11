@@ -8,8 +8,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstring>
+#include <deque>
+#include <random>
 #include <string>
+#include <vector>
 
 using sds::ring_buffer;
 
@@ -110,6 +114,30 @@ TEST_CASE("ring_buffer: dequeue caps at used_size", "[sds][ring_buffer]") {
     REQUIRE(rb.is_empty());
 }
 
+TEST_CASE("ring_buffer: zero-size operations are no-ops",
+          "[sds][ring_buffer]") {
+    ring_buffer rb{8};
+    REQUIRE(rb.enqueue("abc", 3) == 3);
+
+    const auto capacity = rb.capacity();
+    const auto head     = rb.head_index();
+    const auto tail     = rb.tail_index();
+    const auto used     = rb.used_size();
+
+    char out[4] = {};
+    REQUIRE(rb.enqueue("", 0) == 0);
+    REQUIRE(rb.dequeue(out, 0) == 0);
+    REQUIRE(rb.peek(out, 0) == 0);
+
+    REQUIRE(rb.capacity() == capacity);
+    REQUIRE(rb.head_index() == head);
+    REQUIRE(rb.tail_index() == tail);
+    REQUIRE(rb.used_size() == used);
+
+    REQUIRE(rb.dequeue(out, 3) == 3);
+    REQUIRE(std::memcmp(out, "abc", 3) == 0);
+}
+
 TEST_CASE("ring_buffer: direct_enqueue_size respects wrap", "[sds][ring_buffer]") {
     ring_buffer rb{8};
     REQUIRE(rb.direct_enqueue_size() == 7);  // tail==head==0, head!=0 not triggered: 8-0-(0==0?1:0)=7
@@ -129,4 +157,50 @@ TEST_CASE("ring_buffer: move_head / move_tail advance cursors",
     REQUIRE(rb.move_head(2) == 2);
     REQUIRE(rb.head_index() == 2);
     REQUIRE(rb.used_size() == 1);
+}
+
+TEST_CASE("ring_buffer: randomized operations match deque reference",
+          "[sds][ring_buffer]") {
+    ring_buffer rb{8};
+    std::deque<char> reference;
+    std::mt19937 rng{0xC0FFEE};
+    std::uniform_int_distribution<int> op_dist{0, 2};
+    std::uniform_int_distribution<int> size_dist{0, 64};
+
+    int next_byte = 0;
+
+    for (int step = 0; step < 1000; ++step) {
+        const int op = op_dist(rng);
+        const auto request = static_cast<std::size_t>(size_dist(rng));
+
+        if (op == 0) {
+            std::vector<char> input(request);
+            for (char& byte : input) {
+                byte = static_cast<char>('A' + (next_byte++ % 26));
+            }
+
+            REQUIRE(rb.enqueue(input.data(), input.size()) == input.size());
+            reference.insert(reference.end(), input.begin(), input.end());
+        } else if (op == 1) {
+            std::vector<char> output(std::max<std::size_t>(request, 1));
+            const auto expected = std::min(request, reference.size());
+
+            REQUIRE(rb.dequeue(output.data(), request) == expected);
+            for (std::size_t i = 0; i < expected; ++i) {
+                REQUIRE(output[i] == reference.front());
+                reference.pop_front();
+            }
+        } else {
+            std::vector<char> output(std::max<std::size_t>(request, 1));
+            const auto expected = std::min(request, reference.size());
+
+            REQUIRE(rb.peek(output.data(), request) == expected);
+            for (std::size_t i = 0; i < expected; ++i) {
+                REQUIRE(output[i] == reference[i]);
+            }
+        }
+
+        REQUIRE(rb.used_size() == reference.size());
+        REQUIRE(rb.free_size() == rb.capacity() - rb.used_size() - 1);
+    }
 }
