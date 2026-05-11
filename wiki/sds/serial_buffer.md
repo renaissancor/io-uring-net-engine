@@ -1,10 +1,10 @@
-# SerialBuffer — fixed-size scratchpad for packet serialization
+# serial_buffer — fixed-size scratchpad for packet serialization
 
 ## Purpose
 
 A fixed-size byte buffer (default 4 KiB) used to assemble a single outbound
 packet before it is copied into `SendRingBuffer`. Distinct from
-`RingBuffer` — `SerialBuffer` is contiguous, has no wrap, and is meant to
+`RingBuffer` — `serial_buffer` is contiguous, has no wrap, and is meant to
 live on the stack of a packet-build function (or as a `thread_local`
 scratch).
 
@@ -14,18 +14,18 @@ back-patched after the payload is fully written.
 
 ## Reference origin
 
-- `WindowsLibrary/Library/Include/SerialBuffer.h:5` — fixed `4096`-byte
+- `WindowsLibrary/Library/Include/serial_buffer.h:5` — fixed `4096`-byte
   buffer with cursor-based write API.
 
 ## Public API sketch
 
 ```cpp
-namespace iouring_net::buf {
+namespace sds {
 
 template <size_t N = 4096>
-class SerialBuffer {
+class serial_buffer {
 public:
-    SerialBuffer() = default;
+    serial_buffer() = default;
 
     // Reserve N bytes at the head; returns pointer the caller writes to
     // and remembers for later back-patching. Advances cursor by N.
@@ -50,13 +50,13 @@ private:
     size_t                   cursor_{0};
 };
 
-} // namespace iouring_net::buf
+} // namespace sds
 ```
 
 Typical use:
 
 ```cpp
-SerialBuffer<> buf;
+serial_buffer<> buf;
 auto* hdr = buf.reserve<PacketHeader>();          // remember location
 write_payload(buf);                               // appends body
 hdr->size = static_cast<uint16_t>(buf.size());    // back-patch length
@@ -110,7 +110,7 @@ return. Misalignment of `T` inside the buffer is therefore impossible.
    Recommendation: `try_write` returns `expected`; `write` asserts.
    Two-API surface, caller picks based on context.
 2. **Static N vs. runtime N.** Reference is fixed at 4096. We make it a
-   template parameter so `SerialBuffer<512>` is a valid stack-friendly
+   template parameter so `serial_buffer<512>` is a valid stack-friendly
    variant. No runtime-sized version yet.
 3. **Endianness.** Wire format is little-endian (Windows-native). Linux
    x86-64 is also little-endian, so naive `memcpy` is correct. ARM64
