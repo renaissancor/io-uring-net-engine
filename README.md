@@ -25,6 +25,7 @@ distro-aware install runbook.
 ```bash
 make hello                     # configure + build + run examples/hello
 make test                      # configure + build + ctest (default preset)
+make test-sds                  # configure + build + run only sds:: tests
 make test  PRESET=floor        # same, but on the gcc-12 floor preset
 make build PRESET=release      # release build, no sanitizers
 make help                      # list every target
@@ -101,10 +102,10 @@ docs/                  ← cross-cutting design + operations
 
 wiki/                  ← per-source-file design specs (one per planned src/ file)
 ├── README.md          ← wiki ↔ src/ mapping table
-├── data_structure/    ring_buffer, serial_buffer
+├── sds/               ring_buffer, serial_buffer, cstr_hash_map  (generic data structures, sds:: namespace)
 ├── memory/            memory_pool, object_pool, leak_tracker
 ├── sync/              sync_primitives, lock_free_stack
-├── diagnostic/        deadlock_profiler
+├── diagnostic/        profiler_deadlock, profiler_scope
 ├── runtime/           coroutine_task, job_queue, thread_context
 └── network/           io_uring_reactor, listener_and_service, session,
                        packet_framing, packet_handler
@@ -117,8 +118,9 @@ wiki/                  ← per-source-file design specs (one per planned src/ fi
 - Design docs: stable across `docs/` and `wiki/`.
 - Build scaffolding: landed (CMake, presets, deps graph, CI floor job,
   devcontainer, smoke test, `examples/hello/`).
-- Subsystem code: not yet written.
-- First subsystem milestone: a leaf primitive from `wiki/data_structure/`
-  or `wiki/memory/` (likely `ring_buffer`), with full Catch2 coverage.
+- First subsystem landed: `sds::ring_buffer` — direct port from
+  WindowsLibrary, 10 Catch2 cases / 46 assertions (`make test-sds`).
+- Next subsystems: `sds::cstr_hash_map`, `diagnostic::profiler_scope`,
+  then `recv_ring_buffer` / `send_ring_buffer` specializations.
 - First end-to-end milestone: minimal `io_uring` reactor that echoes a
   single TCP connection.

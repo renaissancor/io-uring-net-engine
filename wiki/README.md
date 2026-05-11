@@ -6,6 +6,12 @@ documents the contract, design choices, concurrency/ownership
 constraints, test plan, and open questions for one type or one tightly
 scoped subsystem.
 
+Generic data structures (`sds/`) live in their own `sds::` namespace,
+deliberately decoupled from `iouring_net::` so they can be reused in
+other projects. Domain-coupled subsystems (`network/`, `runtime/`, etc.)
+live in `iouring_net::`. See `wiki/sds/README.md` if/when sds/ grows
+its own index.
+
 For cross-cutting topics (build, kernel, CI, coding style), see
 `docs/`.
 
@@ -13,14 +19,16 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 
 | Wiki spec                                                           | Source files (planned)                                       | Subsystem                  |
 |---------------------------------------------------------------------|--------------------------------------------------------------|----------------------------|
-| [`data_structure/ring_buffer.md`](data_structure/ring_buffer.md)    | `src/data_structure/ring_buffer.{h,cpp}`                     | SPSC framed ring buffer    |
-| [`data_structure/serial_buffer.md`](data_structure/serial_buffer.md) | `src/data_structure/serial_buffer.{h,cpp}`                  | sequential write buffer    |
+| [`sds/ring_buffer.md`](sds/ring_buffer.md)                          | `src/sds/ring_buffer.{h,cpp}`                                | growable circular byte buffer (v1 landed) |
+| [`sds/cstr_hash_map.md`](sds/cstr_hash_map.md)                      | `src/sds/cstr_hash_map.{h,cpp}`                              | hash map keyed by `.rodata` literals |
+| [`sds/serial_buffer.md`](sds/serial_buffer.md)                      | `src/sds/serial_buffer.{h,cpp}`                              | sequential write buffer    |
 | [`memory/memory_pool.md`](memory/memory_pool.md)                    | `src/memory/memory_pool.{h,cpp}`                             | 48-class size-bucket pool  |
 | [`memory/object_pool.md`](memory/object_pool.md)                    | `src/memory/object_pool.{h,cpp}`                             | typed pool over the 48-class allocator |
 | [`memory/leak_tracker.md`](memory/leak_tracker.md)                  | `src/memory/leak_tracker.{h,cpp}`                            | global allocation accounting |
 | [`sync/sync_primitives.md`](sync/sync_primitives.md)                | `src/sync/{atomic,mutex,shared_mutex}.h` (`lnx::` namespace) | std::-shape primitive wrappers |
 | [`sync/lock_free_stack.md`](sync/lock_free_stack.md)                | `src/sync/lock_free_stack.{h,cpp}`                           | Treiber stack (replaces Win32 `SLIST`) |
-| [`diagnostic/deadlock_profiler.md`](diagnostic/deadlock_profiler.md) | `src/diagnostic/deadlock_profiler.{h,cpp}`                  | lock-order graph + cycle detection |
+| [`diagnostic/profiler_deadlock.md`](diagnostic/profiler_deadlock.md) | `src/diagnostic/profiler_deadlock.{h,cpp}`                  | lock-order graph + cycle detection |
+| [`diagnostic/profiler_scope.md`](diagnostic/profiler_scope.md)      | `src/diagnostic/profiler_scope.{h,cpp}`                      | RAII scope-timing profiler |
 | [`runtime/coroutine_task.md`](runtime/coroutine_task.md)            | `src/runtime/task.{h,cpp}`                                   | C++20 coroutine `task<T>`  |
 | [`runtime/job_queue.md`](runtime/job_queue.md)                      | `src/runtime/job_queue.{h,cpp}`                              | per-entity FIFO serializer |
 | [`runtime/thread_context.md`](runtime/thread_context.md)            | `src/runtime/thread_context.{h,cpp}`                         | TLS context for reactor threads |
@@ -46,8 +54,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 
 ## Out of scope for v1
 
-`indexed_heap`, `cstr_hash_map`, `malloc_vector`, `guard_overflow`,
-`profiler`, and the `SelectServer` Python codegen pipeline are
-documented in `docs/00-overview.md` § "Subsystem inventory" with
-status `Defer (v2)` or noted as game-side use cases. They are not
-covered by wiki specs in v1.
+`indexed_heap`, `malloc_vector`, `guard_overflow`, and the
+`SelectServer` Python codegen pipeline are documented in
+`docs/00-overview.md` § "Subsystem inventory" with status `Defer (v2)`
+or noted as game-side use cases. They are not covered by wiki specs in v1.
