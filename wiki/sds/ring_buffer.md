@@ -117,6 +117,13 @@ use site is a session owned by one reactor thread, with the same thread
 producing and consuming. Multi-thread access requires external
 synchronization; **the SPSC / lock-free variant is out of scope for v1**.
 
+**Zero-byte short-circuit.** `enqueue`, `dequeue`, and `peek` return 0
+immediately when `bytes == 0` and skip all buffer access. The C standard
+makes `memcpy(dst, nullptr, 0)` well-defined, but UBSan flags it anyway —
+and callers passing `std::vector::data()` from an empty vector (e.g. the
+randomized property test) hit exactly this case. Short-circuiting is
+both UBSan-clean and one branch faster than the no-op memcpy path.
+
 ## Concurrency & ownership
 
 - v1: **single-threaded.** Caller (e.g., `Session`) is responsible for
@@ -134,8 +141,9 @@ synchronization; **the SPSC / lock-free variant is out of scope for v1**.
 
 ## Test plan
 
-Currently **10 Catch2 cases, 46 assertions** in
-`tests/sds/ring_buffer_test.cpp`:
+Currently **12 Catch2 cases** in `tests/sds/ring_buffer_test.cpp`
+(the randomized property case contributes ~20k assertions per run, so
+the total assertion count varies):
 
 - `construct empty` — sizes/flags on fresh buffer.
 - `capacity floor of 4` — constructor clamps below-floor input.
@@ -147,18 +155,24 @@ Currently **10 Catch2 cases, 46 assertions** in
   split data.
 - `auto-resize on enqueue overflow` — bytes > capacity triggers regrow.
 - `dequeue caps at used_size` — over-request returns clamped count.
+- `zero-size operations are no-ops` — bytes==0 on enqueue/dequeue/peek
+  returns 0 without touching state; safe even with nullptr src (i.e.
+  empty `std::vector::data()`).
 - `direct_enqueue_size respects wrap` — contiguous-region size after
   partial fill.
 - `move_head / move_tail advance cursors` — cursor primitives work
   independently of byte I/O.
+- `randomized operations match deque reference` — 1000 random
+  enqueue/dequeue/peek operations cross-checked against a
+  `std::deque<char>` oracle (deterministic seed `0xC0FFEE`).
 
-Future tests (not yet written):
+Future tests:
 
-- Property test: random write/read sequences of total size up to
-  100 × capacity; final byte stream matches input.
-- ASan: zero-byte enqueue/dequeue/peek must not memcpy past
-  end-of-buffer.
-- Stress: 1M auto-resize triggers without leaks (LSan).
+- ASan/LSan stress: 1M auto-resize triggers, sustained random ops for
+  N seconds, verify no leaks. (LSan is currently flaky on WSL/io_uring
+  hosts — workaround: `ASAN_OPTIONS=detect_leaks=0`; revisit on a
+  non-WSL host.)
+- UBSan integer-overflow probe on `resize_buffer` with huge inputs.
 
 ## Open questions
 
@@ -198,3 +212,38 @@ Future tests (not yet written):
    peek (recv side parses `uint16 size | uint16 id` header before
    returning), and `collect_iovec()` (send side returns up to two iovec
    entries for `io_uring_prep_writev`).
+
+6. **`std::unique_ptr<char[]>` migration.** Replace the raw `char*`
+   buffer with `std::unique_ptr<char[]>`. Mechanical change:
+   - Constructor uses `std::make_unique_for_overwrite<char[]>(capacity_)`
+     (C++20, available on gcc-12+) to skip zero-init and match the
+     current `new char[]` performance.
+   - `resize_buffer` copies the old contents into a fresh unique_ptr
+     then does `buffer_ = std::move(new_buffer)`; the old buffer is
+     destructed automatically.
+   - All `buffer_ + tail_` access sites become `buffer_.get() + tail_`.
+   - Removes the manual `delete[]` from the destructor.
+   - **Bonus: safely re-enable move ctor / assignment as `= default`.**
+     The `= delete` move declarations exist only because the raw owning
+     pointer made a shallow-copy move unsafe; with `unique_ptr`, the
+     default move correctly transfers ownership and leaves the source
+     in a destructible empty state. Useful if a future `Session`
+     factory wants to construct ring_buffers and move them into place.
+
+7. **`std::byte` vs `char` for storage.** Switch `char buffer_[]` to
+   `std::byte buffer_[]`. Semantic improvement (a ring of bytes is not
+   a ring of characters), but pays for itself only at the network
+   boundary:
+   - `recv()`/`send()` take `void*` — no cast needed.
+   - `io_uring_prep_recv` and friends likewise take `void*`.
+   - Catch2 string-equality assertions in the existing tests would
+     need `reinterpret_cast<const char*>(buf.data())` everywhere.
+   - Future packet code that writes serialized bytes would either
+     `reinterpret_cast<std::byte*>(payload)` or work in bytes
+     end-to-end.
+
+   **Decision (current): keep `char`.** Defer `std::byte` until either
+   (a) a real bug appears that byte-typing would have prevented, or
+   (b) the network layer commits to byte-typed APIs end-to-end. Do
+   `std::unique_ptr<char[]>` (open question #6) first — that's the
+   higher-value mechanical change.
