@@ -21,6 +21,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 |---------------------------------------------------------------------|--------------------------------------------------------------|----------------------------|
 | [`sds/ring_buffer.md`](sds/ring_buffer.md)                          | `src/sds/ring_buffer.{h,cpp}`                                | growable circular byte buffer (v1 landed) |
 | [`sds/cstr_hash_map.md`](sds/cstr_hash_map.md)                      | `src/sds/cstr_hash_map.{h,cpp}`                              | hash map keyed by `.rodata` literals |
+| [`sds/malloc_vector.md`](sds/malloc_vector.md)                      | `src/sds/malloc_vector.h`                                    | malloc/free-backed vector for trivial records |
 | [`sds/serial_buffer.md`](sds/serial_buffer.md)                      | `src/sds/serial_buffer.{h,cpp}`                              | sequential write buffer    |
 | [`memory/memory_pool.md`](memory/memory_pool.md)                    | `src/memory/memory_pool.{h,cpp}`                             | 48-class size-bucket pool  |
 | [`memory/object_pool.md`](memory/object_pool.md)                    | `src/memory/object_pool.{h,cpp}`                             | typed pool over the 48-class allocator |
@@ -29,6 +30,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`sync/lock_free_stack.md`](sync/lock_free_stack.md)                | `src/sync/lock_free_stack.{h,cpp}`                           | Treiber stack (replaces Win32 `SLIST`) |
 | [`diagnostic/profiler_deadlock.md`](diagnostic/profiler_deadlock.md) | `src/diagnostic/profiler_deadlock.{h,cpp}`                  | lock-order graph + cycle detection |
 | [`diagnostic/profiler_scope.md`](diagnostic/profiler_scope.md)      | `src/diagnostic/profiler_scope.{h,cpp}`                      | RAII scope-timing profiler |
+| [`runtime/thread.md`](runtime/thread.md)                            | `src/runtime/thread.{h,cpp}`                                | pthread-backed native thread wrapper |
 | [`runtime/coroutine_task.md`](runtime/coroutine_task.md)            | `src/runtime/task.{h,cpp}`                                   | C++20 coroutine `task<T>`  |
 | [`runtime/job_queue.md`](runtime/job_queue.md)                      | `src/runtime/job_queue.{h,cpp}`                              | per-entity FIFO serializer |
 | [`runtime/thread_context.md`](runtime/thread_context.md)            | `src/runtime/thread_context.{h,cpp}`                         | TLS context for reactor threads |
@@ -54,7 +56,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 
 ## Out of scope for v1
 
-`indexed_heap`, `malloc_vector`, `guard_overflow`, and the
-`SelectServer` Python codegen pipeline are documented in
+`indexed_heap`, `guard_overflow`, and the `SelectServer` Python codegen
+pipeline are documented in
 `docs/00-overview.md` § "Subsystem inventory" with status `Defer (v2)`
 or noted as game-side use cases. They are not covered by wiki specs in v1.

@@ -184,18 +184,24 @@ See `wiki/network/io_uring_reactor.md`.
 
 | Win32                              | Linux / C++                                                  |
 |------------------------------------|--------------------------------------------------------------|
-| `_beginthreadex(.., proc, .., &id)` | `std::jthread{proc}` (preferred — auto-joins, has `stop_token`) |
-| `HANDLE`                            | not exposed; use `std::jthread`                              |
-| `WaitForSingleObject(h, INFINITE)`  | `std::jthread::join`                                         |
-| `CloseHandle` (thread)              | not needed (RAII)                                            |
-| `GetCurrentThreadId`                | `std::this_thread::get_id` (opaque) or `gettid()` (Linux tid for tracing) |
+| `CreateThread`                     | raw `clone(2)` / `clone3(2)` level; avoid for normal C/C++ threads |
+| `_beginthreadex(.., proc, .., &id)` | `pthread_create` via future `lnx::thread`                    |
+| `HANDLE`                            | `pthread_t` inside `lnx::thread`                             |
+| `WaitForSingleObject(h, INFINITE)`  | `pthread_join` via `lnx::thread::join`                       |
+| `CloseHandle` (thread)              | `pthread_detach` via `lnx::thread::detach`                   |
+| `GetCurrentThreadId`                | `gettid()` / `syscall(SYS_gettid)` for Linux kernel TID      |
 | `TlsAlloc` / `TlsGetValue` / `TlsSetValue` | `thread_local`                                       |
 | `volatile thread_local`             | `thread_local std::atomic<>` if cross-thread visible         |
-| Sleep / SleepEx                     | `std::this_thread::sleep_for` / `clock_nanosleep`            |
+| Sleep / SleepEx                     | `clock_nanosleep` or `nanosleep`                             |
+
+`pthread_create` is the Linux runtime-aware thread API, closer in spirit
+to `_beginthreadex` than to raw Win32 `CreateThread`. Avoid raw `clone`
+unless building a thread runtime deliberately.
 
 **Origins:**
 - `WindowsLibrary/Library/Include/WinThread.h:8-79`
 - `IOCP_Rookiss/Engine/ThreadManager.cpp:8-14` (TLS stubs only)
+- `wiki/runtime/thread.md`
 
 ---
 

@@ -25,6 +25,7 @@ include(compiler-warnings)
 # ---------------------------------------------------------------------------
 add_library(iouring_net STATIC
   src/_placeholder.cpp
+  src/diagnostic/profiler_scope.cpp
   src/sds/ring_buffer.cpp)
 add_library(iouring_net::iouring_net ALIAS iouring_net)
 

@@ -73,8 +73,9 @@ X for session Y" without manual instrumentation.
 
 ## Test plan
 
-- Unit: spawn a `std::jthread`, call `set_thread_role(reactor, 0, "rx-0")`,
-  read `this_thread().name == "rx-0"`. From the spawning thread,
+- Unit: spawn a pthread-backed `lnx::thread`, call
+  `set_thread_role(reactor, 0, "rx-0")`, read
+  `this_thread().name == "rx-0"`. From the spawning thread,
   `this_thread().role == main`.
 - Unit: assert `this_thread().tid == gettid()` from the running thread.
 - Integration: under a running reactor, log lines correctly identify
