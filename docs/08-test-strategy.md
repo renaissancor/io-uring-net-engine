@@ -4,7 +4,10 @@ What gets tested, at which level, with which tools. The bar is: every
 subsystem in this repo has a test that locks its expected behavior
 under the conditions it will face in production. Concurrency code
 passes TSan; memory code passes ASan; the integration tests cover
-wire-format parity with the Windows reference.
+**header-normalized trace-replay parity** against the Windows
+reference (payload-byte parity per packet — the framing header is
+deliberately wider than the reference's, so raw frame bytes do
+*not* match; see § "Wire-format parity test" below).
 
 ---
 
@@ -13,8 +16,10 @@ wire-format parity with the Windows reference.
 - `tests/<category>/` — Catch2 unit + component tests; the tree
   mirrors `src/<category>/` one file per source file.
 - `tests/integration/` — multi-process loopback tests including the
-  Linux-vs-Windows wire-format-parity test (sends pre-recorded packet
-  fixtures captured from the Windows reference).
+  Linux-vs-Windows wire-format-parity test, which **normalizes** the
+  reference's 3-byte `[0x89][u8 size][u8 type]` header to this
+  library's 4-byte `[u16 size][u16 id]` header on each captured frame
+  before replay.
 - `benchmarks/` — `nanobench`-driven micro-benchmarks; run on demand,
   not in CI by default.
 
@@ -65,30 +70,71 @@ test suite. They run on demand.
 | Session             | full echo round trip; backpressure; mid-recv disconnect            |
 | Listener / Service  | bind failure, fd leak (over 1k connect/disconnect), shutdown       |
 | Packet framing      | every header value; split-header; malformed; cross-repo parity     |
-| Packet handler      | id dispatch; unknown id; codec round-trip; codec size mismatch     |
+| Session handle      | non-owning + generation-stale detection; copy semantics            |
 | Job queue           | FIFO order; multi-thread push correctness                          |
+
+Packet dispatch / handler-table / codec tests are **not** part of
+the library test pyramid in v1 — the dispatcher and codec are
+product-side (see
+[`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md)
+§ "Layer 1 — unit"). The library tests stop at `frame_view`; the
+product owns everything above that.
 
 ---
 
-## Wire-format parity test
+## Wire-format parity test — header-normalized trace replay
 
-The single most important integration test. Captures a binary fixture
-of real Windows-reference packet streams and replays them through the
-Linux server.
+The single most important integration test. Captures real
+Windows-reference packet streams and replays them through the Linux
+server **after a header-normalization step** that converts the
+reference's 3-byte `[0x89][u8 size][u8 type]` header to this library's
+4-byte `[u16 size][u16 id]` header. Parity is a **payload-byte**
+claim, not a frame-byte claim — see
+[`../wiki/network/packet_framing.md`](../wiki/network/packet_framing.md)
+§ "Purpose" and
+[`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
+§ "Parity with the Windows reference" for why.
 
 **Fixture capture.** From the Windows reference build, run a short
 client/server session and `tcpdump -w fixtures/echo_session.pcap`.
 Extract the TCP payload bytes (one binary file per session direction).
-Check the binary fixtures into `tests/fixtures/wire/`.
+The captured bytes are **raw Windows frames** —
+`[0x89][u8 size][u8 type][payload...]` repeated. Check the binary
+fixtures into `tests/fixtures/wire/` alongside a `.meta.yml` sibling
+naming the reference build's schema version.
+
+**Normalization step.** A small helper (Python script or C++ test
+fixture) reads each captured byte stream, parses the 3-byte Windows
+header, validates `code == 0x89`, and re-emits each frame as the
+Linux 4-byte header form:
+
+```
+windows:  0x89 | u8 payload_size | u8 type | payload[payload_size]
+linux:    u16 total_size (= payload_size + 4) | u16 id (= type) | payload[payload_size]
+```
+
+This is **not** "strip 0x89." A bare-strip leaves the bytes
+`[u8 size][u8 type]` which the Linux deframer misparses as
+`u16 size = (type << 8) | size`. Either do the full header normalization
+or expect every test to fail.
 
 **Replay test.** Spin up the Linux service with a hand-registered
-packet handler that records every dispatch; replay the captured bytes
-through a loopback connection; assert the dispatch sequence matches a
-golden expected list.
+packet handler that records every dispatch; pump the normalized
+bytes through a loopback connection; assert the dispatch sequence
+and decoded payload bytes match a golden expected list.
 
-**Why this matters.** A subtle bug in the framer (off-by-one on size,
-endianness mistake, alignment glitch) breaks parity but might pass
-isolated unit tests. Parity catches it.
+**Verified-field-offsets test.** Separately from the replay, the
+test harness asserts each schema-emitted `_wire_offset_<field>`
+matches the actual byte position of that field in a Windows-recorded
+payload. Guards against schema-vs-reference drift in field
+serialization order.
+
+**Why this matters.** A subtle bug in the framer (off-by-one on
+size, endianness mistake, alignment glitch) breaks parity but might
+pass isolated unit tests. Parity replay catches it. The
+verified-offsets test catches schema drift the replay test would
+miss (a packet with one wrong-position field can still round-trip
+within the same build).
 
 ---
 
@@ -165,15 +211,17 @@ TSan job lands.
 
 ## Continuous fuzzing
 
-Out of scope for v1, but the framing code is designed to be
-fuzz-friendly:
+The library's framing code is designed to be fuzz-friendly:
+`peek_frame(std::span<const std::byte>)` is a pure function over
+bytes — wire a libFuzzer harness against it. (The matching
+deframer-fuzz harness on the product side is in
+[`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md)
+§ "Fuzz harness".)
 
-- `peek_frame(std::span<const std::byte>)` is a pure function over
-  bytes.
-- `packet_codec<T>::decode(frame_view)` is pure.
-
-Wire libFuzzer harnesses for both at v2. Catch the long tail of weird
-inputs that property tests miss.
+Codec-level fuzzing is **product-side**: the codec lives in
+`iouring-net-server/generated/` and tests against schema invariants
+(field widths, wire offsets) rather than library framing. Don't
+duplicate it here.
 
 ---
 
@@ -187,6 +235,8 @@ inputs that property tests miss.
    bugs than a 1-second one but costs CI minutes. Run a 5-second
    variant on every PR; a 10-minute variant nightly.
 3. **Property-based testing.** `rapidcheck` integrates cleanly with
-   Catch2. Adopt for framing, ring buffer, and codec round-trips.
+   Catch2. Adopt for framing and ring buffer round-trips.
+   (Codec property tests are product-side; see
+   [`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md).)
 4. **Coverage gates.** No coverage gate at v1. Test thoroughness is
    judged by the per-subsystem table above, not by line coverage.

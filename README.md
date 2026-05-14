@@ -71,8 +71,14 @@ In scope for v1 (echo server over a single connection):
    custom Treiber stack to replace Win32 `SLIST`)
 7. Per-entity job queue (new design — note: not actually implemented in any
    reference repo, so this is a fresh design informed by the lecture material)
-8. Packet framing: `[uint16 size | uint16 id][payload]` — same wire format as
-   the Windows version, so the two implementations are directly comparable
+8. Packet framing: `[uint16 size | uint16 id][payload]` — a deliberately
+   wider 4-byte header than the Windows reference's 3-byte
+   `[0x89][u8 size][u8 type]`, lifting the limits from 256 IDs / 255-byte
+   payloads to 65 535 / 65 531. Parity with the reference is at the
+   **payload-byte level** (per-packet field serialization is byte-identical
+   on matching schemas), enabling **header-normalized trace replay** for
+   cross-platform verification. Not source-compatible; not a drop-in
+   live-client interop claim.
 
 Out of scope for v1: ODBC / database layer, MMO room logic, deadlock profiler
 (may be ported later), Windows compatibility shims.
@@ -108,7 +114,8 @@ wiki/                  ← per-source-file design specs (one per planned src/ fi
 ├── diagnostic/        profiler_deadlock, profiler_scope
 ├── runtime/           coroutine_task, job_queue, thread_context
 └── network/           io_uring_reactor, listener_and_service, session,
-                       packet_framing, packet_handler
+                       session_handle, packet_framing
+                       (packet_handler deferred — product-side)
 ```
 
 ---

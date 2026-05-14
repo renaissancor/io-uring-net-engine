@@ -2,10 +2,34 @@
 
 ## Purpose
 
-Define the on-wire byte format for every packet sent through this library.
-Keeping the framing identical to the Windows reference's lecture format
-gives wire-format parity: a Windows client built against the reference
-repos can talk to a Linux server built on this library, and vice versa.
+Define the on-wire byte format for every packet sent through this
+library: a **4-byte header** `[uint16 size | uint16 id]` followed by
+payload bytes.
+
+**This header is deliberately wider than the Windows reference's.**
+The reference uses a 3-byte header
+`[0x89 | uint8 payload_size | uint8 packet_type]` declared at
+[`~/CLionProjects/SelectServer/TestSerialize/Protocol.h:40-45`](../../../SelectServer/TestSerialize/Protocol.h),
+which caps the protocol at 256 packet IDs and 255-byte payloads.
+This library's 4-byte header lifts those limits to 65 535 IDs and
+65 531 byte payloads — the cost is intentional framing divergence
+from the reference.
+
+The cross-platform claim is therefore **payload-byte parity under
+header normalization**, not raw-bytes parity. A Windows-recorded
+trace is replayed against a Linux server (and vice versa) only after
+a normalization step re-emits the 3-byte Windows header as a Linux
+4-byte header. Stripping the 0x89 magic byte alone is **not**
+sufficient; that mistake would leave a `[uint8 size | uint8 type]`
+header that the Linux deframer misparses as the first 2 bytes of a
+4-byte header.
+
+See
+[`iouring-net-server/docs/04-protocol.md`](../../../iouring-net-server/docs/04-protocol.md)
+§ "Parity with the Windows reference" for the full precondition list,
+the per-packet payload-byte parity statement, and what is/isn't
+guaranteed (in particular: this is NOT a source-compatibility claim;
+v1 does NOT support an unmodified Windows client end-to-end).
 
 ## Reference origin
 
@@ -31,7 +55,7 @@ repos can talk to a Linux server built on this library, and vice versa.
 | Field    | Width   | Encoding         | Meaning                           |
 |----------|---------|------------------|-----------------------------------|
 | `size`   | 2 bytes | little-endian    | Total packet size in bytes (including header). 4 ≤ size ≤ 65535. |
-| `id`     | 2 bytes | little-endian    | Packet ID (0..65535). Zero is reserved (treat as protocol error). |
+| `id`     | 2 bytes | little-endian    | Packet ID (0..65535). Every value is legal at this layer; interpretation belongs to the product's dispatcher. |
 | payload  | size−4  | application-defined | Opaque bytes; interpreted by the handler keyed on `id`. |
 
 **Endianness.** Little-endian on the wire, matching the Windows reference.
@@ -48,7 +72,7 @@ protocol error and the connection is dropped.
 ## Public API sketch
 
 ```cpp
-namespace iouring_net::net {
+namespace iouring_net {
 
 struct packet_header {
     uint16_t size;
@@ -64,7 +88,7 @@ struct frame_view {
 
 class packet_writer {
 public:
-    explicit packet_writer(uint16_t id, iouring_net::buf::serial_buffer<>& buf);
+    explicit packet_writer(uint16_t id, iouring_net::sds::serial_buffer<>& buf);
 
     template <class T>
     packet_writer& write(const T& v);                  // memcpy-append
@@ -73,14 +97,14 @@ public:
     void finalize();                                    // back-patches size
 
 private:
-    iouring_net::buf::serial_buffer<>* buf_;
+    iouring_net::sds::serial_buffer<>* buf_;
     packet_header*                     header_;
 };
 
 // Inverse: framer
 std::optional<frame_view> peek_frame(std::span<const std::byte> bytes) noexcept;
 
-} // namespace iouring_net::net
+} // namespace iouring_net
 ```
 
 ## Linux design
@@ -108,13 +132,30 @@ matches the reference repo's idiom (lecture-derived).
 **Validation rules.** A valid frame:
 - `size >= 4`
 - `size <= 65535` (implicit; `uint16_t`)
-- `id != 0` (zero is the "uninitialized" sentinel; rejecting it catches
-  zero-init bugs)
 - All `size` bytes present in the buffer
 
-A frame failing the first or third rule causes the session to disconnect.
-Failing the second rule is impossible by type. Failing the fourth means
+A frame failing the first rule causes the session to disconnect.
+Failing the second rule is impossible by type. Failing the third means
 "keep waiting."
+
+**Do not reserve or special-case `id == 0` in this layer.** Earlier
+drafts reserved `id == 0` as an "uninitialized" sentinel that would
+close the session, on the theory that it catches zero-init bugs in
+product code. That rule conflicts with the wire-parity claim against
+the Windows reference, whose schema includes
+`SC_CREATE_MY_CHARACTER = 0` at
+[`~/CLionProjects/SelectServer/TestSerialize/packets.json`](../../../SelectServer/TestSerialize/packets.json),
+and breaks any product whose protocol legitimately uses `id == 0`.
+
+Framing is a pure transport layer: every `uint16_t` is a legal `id`
+on the wire, and the framing code path must not branch on the
+numeric value. Whether `0` (or any other ID) is a *registered*
+packet is the product's dispatcher's concern, handled by the
+dispatcher's unknown-id handler (see
+[`iouring-net-server/wiki/server/dispatch.md`](../../../iouring-net-server/wiki/server/dispatch.md)).
+If a future contributor proposes re-adding an `id != 0` (or any
+`id ∈ S`) rule here, the answer is: that policy lives in the
+dispatcher, not the framing layer.
 
 **Magic byte (rejected).** The reference repo's
 `SelectServer/FighterOOP/Network.cpp:377` validates a 0x89 magic byte
@@ -133,7 +174,8 @@ do the same job.
 ## Test plan
 
 - Unit: round-trip every valid header value (size = 4, 100, 65535; id =
-  1, 32768, 65535); byte-exact match.
+  0, 1, 32768, 65535); byte-exact match. `id = 0` is **explicitly
+  included** to catch any reintroduction of the old `id != 0` rule.
 - Unit: malformed header (size < 4) returns protocol error.
 - Unit: split header (2 bytes available, then the other 2 arrive)
   returns `std::nullopt` then a valid frame.

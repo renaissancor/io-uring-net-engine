@@ -26,7 +26,8 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`memory/memory_pool.md`](memory/memory_pool.md)                    | `src/memory/memory_pool.{h,cpp}`                             | 48-class size-bucket pool  |
 | [`memory/object_pool.md`](memory/object_pool.md)                    | `src/memory/object_pool.{h,cpp}`                             | typed pool over the 48-class allocator |
 | [`memory/leak_tracker.md`](memory/leak_tracker.md)                  | `src/memory/leak_tracker.{h,cpp}`                            | global allocation accounting |
-| [`sync/sync_primitives.md`](sync/sync_primitives.md)                | `src/sync/{atomic,mutex,shared_mutex}.h` (`lnx::` namespace) | std::-shape primitive wrappers |
+| [`sync/sync_primitives.md`](sync/sync_primitives.md)                | `src/sync/{mutex,shared_mutex}.h` (`lnx::` namespace)        | sync primitive overview |
+| [`sync/atomic.md`](sync/atomic.md)                                  | `src/sync/atomic.h`                                          | Interlocked-style atomic wrappers (v1 landed) |
 | [`sync/lock_free_stack.md`](sync/lock_free_stack.md)                | `src/sync/lock_free_stack.{h,cpp}`                           | Treiber stack (replaces Win32 `SLIST`) |
 | [`diagnostic/profiler_deadlock.md`](diagnostic/profiler_deadlock.md) | `src/diagnostic/profiler_deadlock.{h,cpp}`                  | lock-order graph + cycle detection |
 | [`diagnostic/profiler_scope.md`](diagnostic/profiler_scope.md)      | `src/diagnostic/profiler_scope.{h,cpp}`                      | RAII scope-timing profiler |
@@ -38,7 +39,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`network/listener_and_service.md`](network/listener_and_service.md) | `src/network/{listener,service}.{h,cpp}`                    | bind/accept + reactor owner |
 | [`network/session.md`](network/session.md)                          | `src/network/session.{h,cpp}`                                | one TCP connection's coroutine + buffers |
 | [`network/packet_framing.md`](network/packet_framing.md)            | `src/network/packet_framing.{h,cpp}`                         | `[uint16 size │ uint16 id]` framer |
-| [`network/packet_handler.md`](network/packet_handler.md)            | `src/network/packet_handler.{h,cpp}`                         | id → handler dispatch      |
+| [`network/packet_handler.md`](network/packet_handler.md)            | *(deferred — no source file)*                                 | DEFERRED out of v1; dispatcher is product-side. File is a status note pointing to `iouring-net-server/wiki/server/dispatch.md`. |
 
 ## Conventions
 

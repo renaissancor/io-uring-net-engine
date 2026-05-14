@@ -30,6 +30,27 @@ add_library(iouring_net STATIC
 add_library(iouring_net::iouring_net ALIAS iouring_net)
 
 target_compile_features(iouring_net PUBLIC cxx_std_20)
+
+# Public API surface — explicit allowlist via FILE_SET HEADERS.
+# Every file listed here is installed and reachable from consumers
+# via `#include <iouring_net/...>`. Anything NOT listed here is
+# private to the library, even if it happens to live in src/.
+# This is the v1.1 boundary mechanism (CMake ≥ 3.23 required;
+# our floor is 3.25, see CMakeLists.txt:1).
+target_sources(iouring_net
+  PUBLIC
+    FILE_SET iouring_net_public_headers
+    TYPE HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
+    FILES
+      src/types.h
+      src/error/expected.h
+      src/diagnostic/profiler_scope.h
+      src/sds/cstr_hash_map.h
+      src/sds/malloc_vector.h
+      src/sds/ring_buffer.h
+      src/sync/atomic.h)
+
 target_include_directories(iouring_net PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/iouring_net>)
@@ -46,18 +67,21 @@ iouring_net_apply_warnings(iouring_net)
 # ---------------------------------------------------------------------------
 # Install / export
 # ---------------------------------------------------------------------------
+# install(TARGETS) drives BOTH the archive install and the FILE_SET
+# header install. Only headers enumerated in the iouring_net_public_headers
+# file-set above ship to the install prefix; any other header in src/ is
+# automatically private. New public surface is added by amending the
+# FILE_SET FILES list (one line per header), making boundary changes
+# reviewable line-by-line. Referenced by docs/09-project-split.md §
+# "The contract surface" and iouring-net-server/docs/07-ci.md §
+# "Boundary enforcement".
 install(TARGETS iouring_net
   EXPORT iouring_netTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/iouring_net)
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/iouring_net
-  FILES_MATCHING
-  PATTERN "*.h"
-  PATTERN "*.hpp")
+  FILE_SET iouring_net_public_headers
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/iouring_net)
 
 configure_package_config_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/iouring_netConfig.cmake.in

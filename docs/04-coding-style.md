@@ -7,53 +7,87 @@ rules. Reference document; consult before adding any new file.
 
 ## Namespace
 
-A namespace exists only to group multiple related types around a single
-concern. Bare classes — pure data structures, single-class subsystems —
-live at global scope. There is no reflexive umbrella namespace just to
-group files in the same `src/` folder.
+**All public library types live under `iouring_net::`** as the
+umbrella namespace. This matches the install include path
+(`<prefix>/include/iouring_net/...`), the CMake target alias
+(`iouring_net::iouring_net`), and the consumer-side spelling
+(`iouring_net::session`, `iouring_net::task<T>`, etc.) used
+throughout `iouring-net-server`.
+
+Earlier drafts placed bare classes at **global scope** to match the
+WindowsLibrary convention (`RingBuffer` not `Win::RingBuffer`). That
+convention works for monolithic projects but conflicts with the
+`find_package` contract for a library consumed across repository
+boundaries; the change to `iouring_net::` as the umbrella is
+deliberate and resolves the namespace contract drift surfaced in
+the architectural review.
+
+Within `iouring_net::`, **sub-namespaces are reserved for genuine
+taxonomies**, not for grouping files in the same `src/` folder:
 
 ```cpp
-// lnx:: — raw POSIX/Linux API wrappers (the Linux equivalent of std::)
-namespace lnx {
-    class mutex, shared_mutex;
-    class atomic32, atomic64, atomic_ptr;
-    class lock_guard, unique_lock, shared_lock_guard, exclusive_lock_guard;
-    // future as added: file, socket, eventfd, timerfd, signalfd, pipe,
-    //                  clock, mmap_region, ...
-}
+namespace iouring_net {
 
-// Per-subsystem namespaces — manager + helpers + free functions.
-// Matches WindowsLibrary's NewTracer::, GuardOverflow::, Profiler:: pattern.
-namespace leak_tracker      { struct info; class manager;
-                              /* operator new / delete overrides */ }
-namespace profiler          { enum class time_unit; struct record;
-                              struct summary_data; class manager; class scope; }
-namespace deadlock_profiler { class manager; }
-namespace guard_overflow    { class manager; /* alloc, free free functions */ }
-namespace log               { enum class level; class logger; }
+  // Raw POSIX/Linux API wrappers (the Linux equivalent of std::).
+  // Brand for code that directly touches pthread_mutex_t, __atomic_*,
+  // eventfd, io_uring_*, etc.
+  namespace lnx {
+      class mutex, shared_mutex;
+      class atomic32, atomic64, atomic_ptr;
+      class lock_guard, unique_lock, shared_lock_guard, exclusive_lock_guard;
+      // future: file, socket, eventfd, timerfd, signalfd, pipe,
+      //         clock, mmap_region, ...
+  }
 
-// Global namespace — pure data, compound primitives, single-class subsystems
-class ring_buffer;
-class serial_buffer;
-template<typename V> class cstr_hash_map;
-template<typename T> class indexed_heap;
-template<typename T> class malloc_vector;
+  // Generic data structures — the "sds" personal-library brand.
+  // Independent of iouring_net domain concepts.
+  namespace sds {
+      class ring_buffer;
+      template<typename V> class cstr_hash_map;
+      template<typename T> class indexed_heap;
+      template<typename T> class malloc_vector;
+      class serial_buffer;
+  }
 
-class memory_pool;
-template<typename T> class object_pool;
-template<typename T> class lock_free_stack;
+  // Diagnostic subsystems with a manager singleton plus helpers.
+  // Matches WindowsLibrary's NewTracer::, GuardOverflow::, Profiler::
+  // pattern, nested one level deeper under iouring_net::.
+  namespace leak_tracker      { struct info; class manager;
+                                /* operator new / delete overrides */ }
+  namespace profiler          { enum class time_unit; struct record;
+                                struct summary_data; class manager; class scope; }
+  namespace deadlock_profiler { class manager; }
+  namespace guard_overflow    { class manager; /* alloc, free free functions */ }
+  namespace log               { enum class level; class logger; }
 
-template<typename T> class task;
-class reactor;
-class job_queue;
-class thread_context;
+  // Direct members of iouring_net::  — primitives, runtime, network
+  // surface. No sub-namespace needed; these ARE iouring_net.
+  class memory_pool;
+  template<typename T> class object_pool;
+  template<typename T> class lock_free_stack;
 
-class listener;
-class service;
-class session;
-class packet_framing;
-class packet_handler;
+  template<typename T> class task;
+  class reactor;
+  class job_queue;
+  class thread_context;
+
+  class listener;
+  class service;
+  class session;
+  class session_handle;
+  class packet_framing;
+  struct frame_view;
+  enum class close_reason;
+  // packet_handler: deferred — dispatcher lives in iouring-net-server
+
+} // namespace iouring_net
 ```
+
+**Public spelling.** External consumers always write
+`iouring_net::session`, `iouring_net::session_handle`,
+`iouring_net::task<T>`, etc. Internal-to-library code may
+`using namespace iouring_net` in a `.cpp` file for brevity but
+**never** in a header.
 
 **Why `lnx::` is narrow.** `lnx::` brands code that *directly wraps* raw
 POSIX or Linux-specific APIs (`pthread_mutex_t`, `__atomic_*`, `eventfd`,
@@ -113,8 +147,9 @@ iouring-net-lib/
 │   ├── sync/             atomic, mutex, shared_mutex, lock_free_stack
 │   ├── diagnostic/       logger, deadlock_profiler, profiler
 │   ├── runtime/          task, reactor, job_queue, thread_context
-│   └── network/          listener, service, session, packet_framing,
-│                         packet_handler
+│   └── network/          listener, service, session, session_handle,
+│                         packet_framing
+│                         (packet_handler deferred — product-side)
 ├── tests/                mirrors src/ structure
 ├── examples/echo_server/
 ├── benchmarks/

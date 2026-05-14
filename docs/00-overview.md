@@ -22,7 +22,9 @@ Win32 entirely.
 │  (echo server, future user code)                                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Network layer                                                       │
-│  Service · Listener · Session · PacketFraming · PacketHandler        │
+│  Service · Listener · Session · SessionHandle · PacketFraming        │
+│  (PacketHandler/dispatcher: deferred — product-side, see             │
+│   wiki/network/packet_handler.md)                                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Runtime layer                                                       │
 │  Reactor (io_uring) · CoroutineTask · JobQueue · ThreadContext       │
@@ -40,6 +42,13 @@ Win32 entirely.
 Lower layers know nothing about higher layers. The reactor depends on
 primitives and `liburing`; the network layer depends on the reactor and
 primitives; application code depends on the network layer.
+
+The top layer (Application) does not live in this repo. It belongs to
+a sibling product repo (`iouring-net-server`, to be created) that
+consumes this library through `find_package(iouring_net)`. See
+[`09-project-split.md`](09-project-split.md) for the full
+library/product architecture, boundary criteria, and the seam that
+connects the two projects.
 
 ---
 
@@ -71,12 +80,13 @@ primitives; application code depends on the network layer.
 | Network     | `listener`                             | Port       | `SelectServer/.../Net.cpp:181` (accept loop)            |
 | Network     | `session`                              | New        | Replaces select-loop `Session` struct (`SelectServer/.../Net.h:39`) |
 | Network     | `packet_framing`                       | Port       | Concept from `SelectServer/.../Network.cpp:377` (magic header) |
-| Network     | `packet_handler`                       | New        | Lecture-derived, not in any reference repo              |
+| Network     | `packet_handler`                       | Deferred   | Pulled out of library v1 — the dispatcher is product-side. See `wiki/network/packet_handler.md` (status note) and `iouring-net-server/wiki/server/dispatch.md`. |
 
 **Status legend:**
 - **Port** — design is OS-agnostic; implementation is a clean transcription with the platform layer swapped.
 - **Rewrite** — same intent, different primitives; implementation is rewritten against `std::atomic` / `std::mutex` / `std::shared_mutex`.
 - **New** — no reference implementation exists; designed from first principles for this repo.
+- **Deferred** — designed but pulled out of v1; either moved to the product repo or scheduled for a later library milestone. The original spec stays in `wiki/` as a status note so the rationale is grep-able.
 
 ---
 
@@ -121,10 +131,24 @@ This is a design-doc honesty marker, not a problem.
 5. **Reference-repo line-level traceability.** Every ported subsystem doc
    cites the original `path:line` so a reader can compare directly.
 
-6. **Wire-format parity.** `[uint16 size | uint16 id][payload]` is identical
-   to the Windows reference. Existing test packets and clients work
-   unmodified against the Linux server, and vice versa — this is the
-   "directly comparable" property called out in `NextProject.md`.
+6. **Wire-format parity — payload-byte, under header normalization.**
+   The framing header is a deliberately wider 4-byte
+   `[uint16 size | uint16 id]` versus the Windows reference's 3-byte
+   `[0x89][u8 size][u8 type]`. Parity is therefore not at the raw frame
+   level; it is at the **payload-byte level**: for any packet name with
+   the same field values, the payload bytes serialize identically on
+   both sides (under preconditions: matching schema, IDs ≤ 255, payload
+   ≤ 255, LE host, verified field offsets). A Windows-recorded trace
+   replays against the Linux server after a header-normalization step
+   converts the 3-byte Windows header to the 4-byte Linux header. This
+   is the "directly comparable" property called out in `NextProject.md`,
+   scoped honestly: it does **not** mean an unmodified Windows client
+   binary speaks to the Linux server end-to-end (v1 ships no
+   compat-deframer), and "strip 0x89" alone is **not** sufficient. See
+   [`../wiki/network/packet_framing.md`](../wiki/network/packet_framing.md)
+   § "Purpose" and the consumer-side detail in
+   [`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
+   § "Parity with the Windows reference."
 
 7. **Namespace tiers.** `lnx::` is reserved for raw POSIX/Linux API
    wrappers (`mutex`, `atomic32`, future `file` / `socket` / `eventfd`) —

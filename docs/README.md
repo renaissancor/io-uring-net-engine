@@ -15,6 +15,7 @@ cross-cutting layer.
 | [`06-system-setup.md`](06-system-setup.md)  | new contributor       | Distro-specific install runbook, smoke tests, kernel sanity check.                                     |
 | [`07-ci-and-reproducibility.md`](07-ci-and-reproducibility.md) | release engineer | CI matrix, floor job, Dockerfile, devcontainer, `version-snapshot.txt`.                            |
 | [`08-test-strategy.md`](08-test-strategy.md) | test author          | Test pyramid, per-subsystem coverage targets, sanitizer policy, wire-format parity test.              |
+| [`09-project-split.md`](09-project-split.md) | architect, integrator | Library / product two-repo architecture, boundary criteria, `find_package` seam, when to split.       |
 
 The `03-` slot is intentionally empty; an earlier
 `03-second-pass-findings.md` retrospective was folded into the active

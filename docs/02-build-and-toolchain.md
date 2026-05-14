@@ -202,8 +202,8 @@ iouring-net-lib/
 │   ├── sync/              atomic, mutex, shared_mutex, lock_free_stack
 │   ├── diagnostic/        logger, deadlock_profiler, profiler
 │   ├── runtime/           task, reactor, job_queue, thread_context
-│   ├── network/           listener, service, session, packet_framing,
-│   │                      packet_handler
+│   ├── network/           listener, service, session, session_handle,
+│   │                      packet_framing  (packet_handler deferred — product-side)
 │   └── error/             expected (alias header re-exporting tl::expected)
 ├── tests/                 mirrors src/ category layout
 │   ├── data_structure/  memory/  sync/  diagnostic/  runtime/  network/
