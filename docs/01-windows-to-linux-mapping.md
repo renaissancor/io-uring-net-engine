@@ -211,7 +211,7 @@ See `wiki/network/io_uring_reactor.md`.
 | Win32                              | Linux / C++                                                  |
 |------------------------------------|--------------------------------------------------------------|
 | `CreateThread`                     | raw `clone(2)` / `clone3(2)` level; avoid for normal C/C++ threads |
-| `_beginthreadex(.., proc, .., &id)` | `pthread_create` via future `lnx::thread`                    |
+| `_beginthreadex(.., proc, .., &id)` | `pthread_create` via `lnx::thread` (`src/runtime/thread.h`)                    |
 | `HANDLE`                            | `pthread_t` inside `lnx::thread`                             |
 | `WaitForSingleObject(h, INFINITE)`  | `pthread_join` via `lnx::thread::join`                       |
 | `CloseHandle` (thread)              | `pthread_detach` via `lnx::thread::detach`                   |

@@ -150,15 +150,16 @@ public:
   methods to mirror `Win::SharedMutex`'s `Release*Exclusive` /
   `Release*Shared` split.
 - **Debug-only misuse trap.** Every pthread call's return value is checked
-  through a header-local `LNX_DCHECK(cond)` macro that expands to
-  `__builtin_trap()` (illegal-instruction → `SIGILL`) when `NDEBUG` is
-  unset, and to `((void)0)` otherwise. Zero cost in release. Catches
-  double-unlock (`EPERM`), use of a destroyed mutex (`EINVAL`),
-  init-time `EAGAIN`/`ENOMEM`, and any other surprise non-zero return.
-  No `<cassert>`, no `std::abort`, no exception machinery — `__builtin_trap`
-  is a GCC/Clang intrinsic that emits `ud2` (x86) / `brk` (ARM). For try
-  variants, the macro permits both `0` and `EBUSY` since `EBUSY` is the
-  documented "lock held" return path, not an error.
+  through `LNX_DCHECK(cond)` from `src/check.h` (see `wiki/check.md`).
+  Traps via `int 3` → `SIGTRAP` when `NDEBUG` is unset; compiles to
+  `((void)0)` otherwise. Zero cost in release — appropriate for the
+  hot-path lock/unlock surface. Catches double-unlock (`EPERM`), use of
+  a destroyed mutex (`EINVAL`), init-time `EAGAIN`/`ENOMEM`, and any
+  other surprise non-zero return. For try variants, the macro permits
+  both `0` and `EBUSY` since `EBUSY` is the documented "lock held"
+  return path, not an error. Contrast with the cold-path `lnx::thread`,
+  which uses the always-on `LNX_CHECK` variant — see
+  `wiki/runtime/thread.md`.
 - **Init/destroy:** with `nullptr` attributes both are effectively infallible
   on Linux/glibc — the documented `EAGAIN` / `ENOMEM` paths are
   system-catastrophe states. Debug builds trap on the rare failure for

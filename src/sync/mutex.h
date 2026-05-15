@@ -1,16 +1,10 @@
 #pragma once
 // mutex.h
 
+#include "check.h"
+
 #include <cerrno>
 #include <pthread.h>
-
-// Debug-only misuse trap. Catches double-unlock, use-after-destroy, init
-// failure, etc. Zero cost in release builds. No <cassert>, no std::abort.
-#ifndef NDEBUG
-    #define LNX_DCHECK(cond) do { if (!(cond)) __builtin_trap(); } while (0)
-#else
-    #define LNX_DCHECK(cond) ((void)0)
-#endif
 
 namespace lnx {
 
@@ -206,5 +200,3 @@ public:
 };
 
 } // namespace lnx
-
-#undef LNX_DCHECK

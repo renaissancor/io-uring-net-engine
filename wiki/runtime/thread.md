@@ -53,10 +53,8 @@ namespace lnx {
 
 class thread {
 public:
-    using proc = void* (*)(void*);
-
-    thread() noexcept = default;
-    thread(proc start, void* arg);
+    thread() noexcept;
+    thread(void* (*fn)(void*), void* arg) noexcept;
     ~thread() noexcept;
 
     thread(const thread&)            = delete;
@@ -64,18 +62,24 @@ public:
     thread(thread&&) noexcept;
     thread& operator=(thread&&) noexcept;
 
-    void join();
-    void detach();
-
-    bool joinable() const noexcept;
+    void      join() noexcept;
+    void      detach() noexcept;
+    bool      joinable() const noexcept;
     pthread_t native_handle() const noexcept;
-    pid_t tid() const noexcept;
 
 private:
-    pthread_t handle_{};
-    pid_t     tid_ = 0;
-    bool      joinable_ = false;
+    pthread_t _tid;
+    bool      _joinable;
 };
+
+namespace this_thread {
+
+void      yield() noexcept;
+void      sleep_for_ns(int64_t ns) noexcept;
+pthread_t id() noexcept;
+int       kernel_tid() noexcept;
+
+} // namespace this_thread
 
 } // namespace lnx
 ```
@@ -95,22 +99,42 @@ version should keep ownership and error behavior visible.
 
 ## Linux Design
 
-**Creation.** `thread(proc, void*)` calls `pthread_create`. If creation
-fails, return the `errno`-style error through the project's chosen error
-surface. If this lands before a POSIX error wrapper exists, throwing
-`std::system_error` is acceptable off the hot path, but `expected` is the
-better project fit.
+**Creation.** `thread(fn, arg)` calls `pthread_create` with default
+attributes. The return is checked via `LNX_CHECK` from `src/check.h`
+(see `wiki/check.md`) — traps via `int 3` → `SIGTRAP` in **both debug
+and release**, with no exception runtime involvement. `pthread_create`
+failure is OOM/thread-limit territory and unrecoverable in practice;
+trapping immediately at the misuse site produces a clean core dump for
+the on-call engineer (gdb-resumable in dev, fatal in prod). No
+`std::system_error`, no `std::abort`, no exception machinery.
 
-**Join/detach policy.** Match `std::thread` and the Windows `Thread`
-wrapper: destroying a still-joinable thread is a programming error. The
-Windows wrapper calls `std::terminate()`. Linux `lnx::thread` should do
-the same unless the owning subsystem explicitly calls `join()` or
-`detach()`.
+**Join/detach policy.** Destroying a still-joinable thread is a programming
+error. The destructor traps via `LNX_CHECK(!_joinable)`. Same trap fires
+in both debug and release because thread ops are cold-path — adding a
+branch costs nothing. This diverges from `std::thread` and `Win::Thread`
+(both call `std::terminate()`) because the project deliberately keeps the
+primitive layer free of `std::abort` / `std::terminate`. The trap is also
+strictly better for debugging: `std::terminate` unwinds the stack, while
+`int 3` halts at the misuse site with the stack intact, so post-mortem
+core dumps point directly at the offending operation.
 
-**Thread id.** `pthread_t` is the pthread handle, not the kernel TID.
-The wrapper should cache `gettid()` from inside the new thread's
-trampoline before it calls the user's entry point. That makes `tid()`
-useful for logs, profiler output, `perf`, `top -H`, and `htop`.
+**Why `LNX_CHECK` here, not `LNX_DCHECK`?** Thread creation, join, and
+detach are cold-path operations — they take microseconds and happen rarely.
+A per-call branch cost is invisible. Choosing the always-on variant closes
+the "release builds silently leak thread handles" failure mode that a
+debug-only check would leave open. Folly/abseil/Chromium make the same
+split (`CHECK_*` for cold-path invariants, `DCHECK_*` for hot paths).
+`lnx::mutex` uses `LNX_DCHECK` instead because mutex lock/unlock is
+hot-path and a branch per op would actually matter.
+
+**Thread id (v1).** `pthread_t` is the pthread handle, exposed via
+`native_handle()`. The kernel TID for the *current* thread is available
+through `lnx::this_thread::kernel_tid()` (which calls `syscall(SYS_gettid)`).
+v1 does NOT cache a per-wrapper kernel TID — there is no `lnx::thread::tid()`
+accessor. Adding it requires a trampoline to capture `gettid()` from inside
+the new thread before the user `fn` runs, because the wrapper-creating
+thread cannot observe another thread's `gettid()` directly. Deferred until
+a real use case (log/perf correlation, `top -H` integration) demands it.
 
 **TLS correctness.** Threads created with `pthread_create` correctly
 support C++ `thread_local`. Therefore `profiler::manager::instance()`
@@ -145,30 +169,49 @@ without depending on the wrapper itself.
 
 ## Test Plan
 
-- **Unit — join.** Start a pthread-backed thread, mutate an atomic/counter
-  in the entry point, join, and assert the mutation is visible.
-- **Unit — detach.** Start a thread, detach, and assert the wrapper is no
-  longer joinable. Use synchronization so the test does not race process
-  exit.
-- **Unit — move.** Move a joinable thread into another wrapper and join
-  through the moved-to object.
-- **Unit — native handles.** `native_handle()` is nonzero/valid while
-  joinable; `tid()` is populated from inside the worker.
-- **Unit — profiler TLS.** A pthread worker records scope `"X"` and the
-  main thread records scope `"X"`; each manager sees exactly its own
-  record.
-- **Unit — thread_context.** Worker calls `set_thread_role`, then
-  `this_thread()` reports the worker role while main remains `main`.
+Implemented in `tests/runtime/thread_test.cpp`:
+
+- `thread: default constructed is not joinable`
+- `thread: created thread runs the function and is joinable`
+- `thread: detached thread runs and the wrapper is no longer joinable`
+- `thread: move ctor transfers ownership`
+- `thread: move assign transfers ownership`
+- `thread: native_handle returns pthread_t` (uses `pthread_equal` per POSIX,
+  since `pthread_t` is opaque)
+- `this_thread::id and kernel_tid return current thread identities`
+- `this_thread::yield is callable and returns`
+- `this_thread::sleep_for_ns sleeps for approximately the requested duration`
+
+Future tests:
+
+- **Profiler TLS interaction.** A `lnx::thread` worker records profiler
+  scopes and the main thread records profiler scopes; each manager sees
+  exactly its own record. Lands when the profiler subsystem grows
+  multi-thread coverage.
+- **`thread_context` integration.** Worker calls `set_thread_role`, then
+  `this_thread()` reports the worker role while main remains `main`. Lands
+  alongside `wiki/runtime/thread_context.md` implementation.
+- **TSan run.** Catch races in the join/detach state machine under
+  contention. Ratchet TSan-clean as a CI gate when the tsan preset lands.
 
 ## Open Questions
 
-1. **Error surface.** Should `thread(proc, void*)` throw on
-   `pthread_create` failure, or return `expected<thread, posix_error>`?
-   For system-code consistency, prefer `expected` once POSIX error
-   wrappers are available.
-2. **Callable support.** Do we want lambda/function-object construction
-   like `WinThread`, or should runtime code use explicit C-style entry
-   points? Start C-style; add callable support if examples/tests become
-   too noisy.
+1. **Cached kernel TID (deferred).** Add `lnx::thread::tid()` that returns
+   the wrapped thread's `gettid()`. Requires a trampoline that captures
+   `gettid()` before calling `fn`, plus a sync mechanism so the wrapper's
+   `_kernel_tid` member is published before the constructor returns. Ship
+   when log/perf correlation needs it.
+2. **Callable support (deferred).** Lambda/function-object construction
+   like `Win::Thread`'s `template<class F> Thread(F&&)` requires a heap-
+   allocated closure (Win::Thread uses `new std::function<void()>`).
+   Conflicts with the no-`std::` primitive ethos; would need a hand-rolled
+   closure type. C-style `(void* (*)(void*), void*)` is plenty for v1 and
+   is what production reactor code uses anyway.
 3. **Cancellation.** POSIX cancellation is sharp and should be disabled
    or ignored initially. Use cooperative stop flags in owning subsystems.
+4. **`pthread_attr_t` exposure (deferred).** CPU affinity
+   (`pthread_setaffinity_np`), thread name (`pthread_setname_np`),
+   scheduling policy, stack size — all useful for game-server worker pools.
+   v1 omits them; add a `thread_attr` builder type and an
+   `thread(thread_attr, fn, arg)` overload when the I/O reactor / worker
+   pool subsystems need them.
