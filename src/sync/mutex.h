@@ -1,7 +1,16 @@
 #pragma once
 // mutex.h
 
+#include <cerrno>
 #include <pthread.h>
+
+// Debug-only misuse trap. Catches double-unlock, use-after-destroy, init
+// failure, etc. Zero cost in release builds. No <cassert>, no std::abort.
+#ifndef NDEBUG
+    #define LNX_DCHECK(cond) do { if (!(cond)) __builtin_trap(); } while (0)
+#else
+    #define LNX_DCHECK(cond) ((void)0)
+#endif
 
 namespace lnx {
 
@@ -10,17 +19,29 @@ private:
     pthread_mutex_t _mtx;
 
 public:
-    inline mutex() noexcept  { pthread_mutex_init(&_mtx, nullptr); }
-    inline ~mutex() noexcept { pthread_mutex_destroy(&_mtx); }
+    inline mutex() noexcept {
+        LNX_DCHECK(pthread_mutex_init(&_mtx, nullptr) == 0);
+    }
+    inline ~mutex() noexcept {
+        LNX_DCHECK(pthread_mutex_destroy(&_mtx) == 0);
+    }
 
     mutex(const mutex&)            = delete;
     mutex& operator=(const mutex&) = delete;
     mutex(mutex&&)                 = delete;
     mutex& operator=(mutex&&)      = delete;
 
-    inline void lock() noexcept     { pthread_mutex_lock(&_mtx); }
-    inline bool try_lock() noexcept { return pthread_mutex_trylock(&_mtx) == 0; }
-    inline void unlock() noexcept   { pthread_mutex_unlock(&_mtx); }
+    inline void lock() noexcept {
+        LNX_DCHECK(pthread_mutex_lock(&_mtx) == 0);
+    }
+    inline bool try_lock() noexcept {
+        int rc = pthread_mutex_trylock(&_mtx);
+        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        return rc == 0;
+    }
+    inline void unlock() noexcept {
+        LNX_DCHECK(pthread_mutex_unlock(&_mtx) == 0);
+    }
 };
 
 class shared_mutex {
@@ -28,21 +49,41 @@ private:
     pthread_rwlock_t _mtx;
 
 public:
-    inline shared_mutex() noexcept  { pthread_rwlock_init(&_mtx, nullptr); }
-    inline ~shared_mutex() noexcept { pthread_rwlock_destroy(&_mtx); }
+    inline shared_mutex() noexcept {
+        LNX_DCHECK(pthread_rwlock_init(&_mtx, nullptr) == 0);
+    }
+    inline ~shared_mutex() noexcept {
+        LNX_DCHECK(pthread_rwlock_destroy(&_mtx) == 0);
+    }
 
     shared_mutex(const shared_mutex&)            = delete;
     shared_mutex& operator=(const shared_mutex&) = delete;
     shared_mutex(shared_mutex&&)                 = delete;
     shared_mutex& operator=(shared_mutex&&)      = delete;
 
-    inline void lock_exclusive() noexcept     { pthread_rwlock_wrlock(&_mtx); }
-    inline bool try_lock_exclusive() noexcept { return pthread_rwlock_trywrlock(&_mtx) == 0; }
-    inline void unlock_exclusive() noexcept   { pthread_rwlock_unlock(&_mtx); }
+    inline void lock_exclusive() noexcept {
+        LNX_DCHECK(pthread_rwlock_wrlock(&_mtx) == 0);
+    }
+    inline bool try_lock_exclusive() noexcept {
+        int rc = pthread_rwlock_trywrlock(&_mtx);
+        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        return rc == 0;
+    }
+    inline void unlock_exclusive() noexcept {
+        LNX_DCHECK(pthread_rwlock_unlock(&_mtx) == 0);
+    }
 
-    inline void lock_shared() noexcept     { pthread_rwlock_rdlock(&_mtx); }
-    inline bool try_lock_shared() noexcept { return pthread_rwlock_tryrdlock(&_mtx) == 0; }
-    inline void unlock_shared() noexcept   { pthread_rwlock_unlock(&_mtx); }
+    inline void lock_shared() noexcept {
+        LNX_DCHECK(pthread_rwlock_rdlock(&_mtx) == 0);
+    }
+    inline bool try_lock_shared() noexcept {
+        int rc = pthread_rwlock_tryrdlock(&_mtx);
+        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        return rc == 0;
+    }
+    inline void unlock_shared() noexcept {
+        LNX_DCHECK(pthread_rwlock_unlock(&_mtx) == 0);
+    }
 };
 
 class lock_guard {
@@ -165,3 +206,5 @@ public:
 };
 
 } // namespace lnx
+
+#undef LNX_DCHECK

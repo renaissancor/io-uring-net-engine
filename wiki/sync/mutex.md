@@ -149,10 +149,21 @@ public:
   `unlock_shared` both forward to the same call but are kept as separate
   methods to mirror `Win::SharedMutex`'s `Release*Exclusive` /
   `Release*Shared` split.
-- **Init return is ignored.** `pthread_mutex_init` and `pthread_rwlock_init`
-  with `nullptr` attributes are effectively infallible on Linux/glibc — the
-  documented `EAGAIN` / `ENOMEM` paths are system-catastrophe states.
-  Treating them as unreachable matches `InitializeSRWLock`'s void return.
+- **Debug-only misuse trap.** Every pthread call's return value is checked
+  through a header-local `LNX_DCHECK(cond)` macro that expands to
+  `__builtin_trap()` (illegal-instruction → `SIGILL`) when `NDEBUG` is
+  unset, and to `((void)0)` otherwise. Zero cost in release. Catches
+  double-unlock (`EPERM`), use of a destroyed mutex (`EINVAL`),
+  init-time `EAGAIN`/`ENOMEM`, and any other surprise non-zero return.
+  No `<cassert>`, no `std::abort`, no exception machinery — `__builtin_trap`
+  is a GCC/Clang intrinsic that emits `ud2` (x86) / `brk` (ARM). For try
+  variants, the macro permits both `0` and `EBUSY` since `EBUSY` is the
+  documented "lock held" return path, not an error.
+- **Init/destroy:** with `nullptr` attributes both are effectively infallible
+  on Linux/glibc — the documented `EAGAIN` / `ENOMEM` paths are
+  system-catastrophe states. Debug builds trap on the rare failure for
+  development visibility; release builds proceed unchecked, matching
+  `InitializeSRWLock`'s void-return contract on Windows.
 - **Win-style `lock_exclusive` naming on `shared_mutex`.** Intentional: it
   mirrors `Win::SharedMutex`. Project code provides its own guards, so
   std-style `lock()` / `lock_shared()` would only enable `std::scoped_lock`
