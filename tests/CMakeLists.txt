@@ -11,7 +11,8 @@ add_executable(iouring_net-test
   diagnostic/profiler_scope_test.cpp
   sds/cstr_hash_map_test.cpp
   sds/malloc_vector_test.cpp
-  sds/ring_buffer_test.cpp)
+  sds/ring_buffer_test.cpp
+  sync/atomic_test.cpp)
 
 target_link_libraries(iouring_net-test PRIVATE
   iouring_net

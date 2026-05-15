@@ -24,6 +24,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "error/expected.h"
+#include "types.h"
 
 TEST_CASE("C++20 ranges + jthread", "[smoke][cxx20]") {
     std::vector v{1, 2, 3, 4};
@@ -53,6 +54,25 @@ TEST_CASE("project expected alias", "[smoke][expected]") {
     expected<int, int> err = unexpected{7};
     REQUIRE_FALSE(err.has_value());
     REQUIRE(err.error() == 7);
+}
+
+TEST_CASE("project scalar type aliases", "[smoke][types]") {
+    REQUIRE(sizeof(byte) == 1);
+
+    REQUIRE(sizeof(int8) == 1);
+    REQUIRE(sizeof(int16) == 2);
+    REQUIRE(sizeof(int32) == 4);
+    REQUIRE(sizeof(int64) == 8);
+
+    REQUIRE(sizeof(uint8) == 1);
+    REQUIRE(sizeof(uint16) == 2);
+    REQUIRE(sizeof(uint32) == 4);
+    REQUIRE(sizeof(uint64) == 8);
+
+    REQUIRE(sizeof(uptr) == sizeof(void*));
+    REQUIRE(sizeof(iptr) == sizeof(void*));
+    REQUIRE(sizeof(usize) == sizeof(std::size_t));
+    REQUIRE(sizeof(isize) == sizeof(std::ptrdiff_t));
 }
 
 TEST_CASE("liburing queue init/exit", "[smoke][liburing]") {

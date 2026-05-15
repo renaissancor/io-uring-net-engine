@@ -31,28 +31,29 @@ Reference repos:
 
 ## Atomics
 
-`std::atomic<T>` replaces every `Interlocked*` intrinsic. Memory ordering
-must be made explicit — Win32 `Interlocked*` is implicitly sequentially
-consistent; on Linux/C++ we choose the weakest ordering that is still
-correct.
+`lnx::atomic32` / `lnx::atomic64` / `lnx::atomic_ptr` wrap GCC/Clang
+`__atomic_*` builtins as the project's low-level Interlocked replacement.
+Memory ordering must be made explicit at the wrapper boundary — Win32
+`Interlocked*` is implicitly sequentially consistent, while Linux/C++ lets
+us choose weaker ordering when it is still correct.
 
-| Win32                                          | C++ `std::atomic`                                  |
+| Win32                                          | Linux / C++                                        |
 |------------------------------------------------|----------------------------------------------------|
-| `_InterlockedIncrement(p)`                     | `std::atomic<int32_t>::fetch_add(1) + 1`           |
-| `_InterlockedDecrement(p)`                     | `std::atomic<int32_t>::fetch_sub(1) - 1`           |
-| `_InterlockedExchangeAdd(p, n)`                | `std::atomic<>::fetch_add(n)`                      |
-| `_InterlockedExchange(p, v)`                   | `std::atomic<>::exchange(v)`                       |
-| `_InterlockedCompareExchange(p, exch, comp)`   | `std::atomic<>::compare_exchange_strong(comp, exch)` (returns bool; old value is in `comp` on failure) |
-| `_InterlockedIncrement64`, etc.                | `std::atomic<int64_t>` variants                    |
-| `_InterlockedExchangePointer`                  | `std::atomic<T*>::exchange`                        |
-| `_InterlockedCompareExchangePointer`           | `std::atomic<T*>::compare_exchange_strong`         |
-| `volatile LONG` (Win32 acquire-release)        | `std::atomic<int32_t>` with explicit `memory_order` |
+| `_InterlockedIncrement(p)`                     | `__atomic_add_fetch(p, 1, __ATOMIC_SEQ_CST)`       |
+| `_InterlockedDecrement(p)`                     | `__atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST)`       |
+| `_InterlockedExchangeAdd(p, n)`                | `__atomic_fetch_add(p, n, __ATOMIC_SEQ_CST)`       |
+| `_InterlockedExchange(p, v)`                   | `__atomic_exchange_n(p, v, __ATOMIC_SEQ_CST)`      |
+| `_InterlockedCompareExchange(p, exch, comp)`   | `__atomic_compare_exchange_n` wrapped to return the observed old value |
+| `_InterlockedIncrement64`, etc.                | `lnx::atomic64` variants                           |
+| `_InterlockedExchangePointer`                  | `lnx::atomic_ptr::exchange`                        |
+| `_InterlockedCompareExchangePointer`           | `lnx::atomic_ptr::compare_exchange`                |
+| `volatile LONG` (Win32 acquire-release)        | plain storage inside `lnx::atomic32`; synchronization comes from `__atomic_*` memory order |
 
 **Memory-order policy for this project:**
-- Reference counts: `fetch_add(memory_order_relaxed)` for inc, `fetch_sub(memory_order_acq_rel)` for dec, `acquire` fence after dec hits zero.
-- Treiber-stack push: `compare_exchange_weak(memory_order_release, memory_order_relaxed)`.
-- Treiber-stack pop: `compare_exchange_weak(memory_order_acquire, memory_order_acquire)`.
-- Spin loops: explicit `std::atomic_thread_fence(memory_order_seq_cst)` is forbidden without justification in a code comment.
+- Reference counts: relaxed increment; acq-rel decrement; acquire fence after decrement hits zero.
+- Treiber-stack push: release compare-exchange with relaxed failure ordering.
+- Treiber-stack pop: acquire compare-exchange.
+- Spin loops: explicit `lnx::memory_barrier()` is forbidden without justification in a code comment.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/Atomic.h:29-34, 73-78, 117-120`

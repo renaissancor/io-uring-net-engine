@@ -20,54 +20,53 @@ arguments local and makes the deadlock profiler's job tractable.
   `WindowsLibrary/Library/Include/WinMutex.h:49-143`
 
 The reference implementation builds these as wrappers around
-`InterlockedXxx` / `CRITICAL_SECTION` / `SRWLOCK`. On Linux we use the
-standard library directly — the wrappers add nothing beyond the standard
-shape.
+`InterlockedXxx` / `CRITICAL_SECTION` / `SRWLOCK`. On Linux, atomics use
+GCC/Clang `__atomic_*` builtins behind `lnx::atomic32`, `lnx::atomic64`,
+and `lnx::atomic_ptr`; see `wiki/sync/atomic.md`. Mutex and shared-mutex
+wrappers remain planned as POSIX-backed primitives.
 
 ## Public API sketch
 
-This subsystem is mostly **type aliases** and a few thin wrappers. The
-public surface in `<iouring_net/primitives/sync.hpp>`:
+This subsystem keeps the raw Linux/POSIX-facing synchronization vocabulary
+under `lnx::`. The public surface is split across focused headers such as
+`sync/atomic.h`:
 
 ```cpp
-namespace iouring_net::sync {
+namespace lnx {
 
 // Atomics
-template <class T>
-using atomic = std::atomic<T>;                    // alias for parity
+class atomic32;
+class atomic64;
+class atomic_ptr;
 
 // Locks
-using mutex             = std::mutex;
-using shared_mutex      = std::shared_mutex;
-using recursive_mutex   = std::recursive_mutex;   // discouraged; use sparingly
+class mutex;
+class shared_mutex;
+class recursive_mutex;
 
 // Scoped guards
-using lock_guard        = std::lock_guard<std::mutex>;
-template <class M>
-using scoped_lock       = std::scoped_lock<M>;
-template <class M = std::mutex>
-using unique_lock       = std::unique_lock<M>;
-using shared_lock       = std::shared_lock<std::shared_mutex>;
-using exclusive_lock    = std::lock_guard<std::shared_mutex>;
+class lock_guard;
+class unique_lock;
+class shared_lock_guard;
+class exclusive_lock_guard;
 
-// Project-specific helpers
-class spin_mutex;                                 // small adaptive spinlock
-class once_flag;                                  // alias for std::once_flag
-
-} // namespace iouring_net::sync
+} // namespace lnx
 ```
 
-The aliases exist so the project codebase imports `sync::mutex` rather than
-`std::mutex`, giving us a single seam if we ever need to swap (e.g., for a
-deadlock-profiling instrumented variant in debug builds).
+The wrappers exist so the project codebase imports `lnx::mutex` /
+`lnx::atomic32` rather than raw `pthread_*` or `__atomic_*` calls, giving us
+a single place to reason about platform behavior and future debug
+instrumentation.
 
 ## Linux design
 
-**Atomic.** `std::atomic<T>` directly. Memory orderings are listed
-explicitly at every call site, with the policy in
-`docs/01-windows-to-linux-mapping.md` (relaxed for ref-count inc, acq-rel
-for ref-count dec, etc.). No `std::atomic_thread_fence` without a written
-justification at the call site.
+**Atomic.** `lnx::atomic32`, `lnx::atomic64`, and `lnx::atomic_ptr` are
+direct ports of the WindowsLibrary `WinAtomic.h` structure. They wrap
+`__atomic_*` builtins, stay naturally sized by default, and preserve
+Windows-style `compare_exchange` return semantics: the method returns the
+observed old value, not a success boolean. Use `lnx::cache_aligned<T>` when
+false-sharing protection is needed. No `lnx::memory_barrier()` without a
+written justification at the call site.
 
 **`spin_mutex`.** Optional small lock for very short critical sections (no
 allocation, no syscalls). Implementation:
