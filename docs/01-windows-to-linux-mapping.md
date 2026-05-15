@@ -63,19 +63,30 @@ us choose weaker ordering when it is still correct.
 
 ## Mutexes (exclusive)
 
-| Win32                              | Linux / C++                          |
-|------------------------------------|--------------------------------------|
-| `CRITICAL_SECTION`                 | `std::mutex`                         |
-| `InitializeCriticalSectionEx(.., spinCount, 0)` | adaptive: `pthread_mutex_t` with `PTHREAD_MUTEX_ADAPTIVE_NP` (Linux extension) — only if profiling shows `std::mutex` is contended hot |
-| `EnterCriticalSection`             | `std::mutex::lock`                   |
-| `TryEnterCriticalSection`          | `std::mutex::try_lock`               |
-| `LeaveCriticalSection`             | `std::mutex::unlock`                 |
-| `DeleteCriticalSection`            | destructor                           |
-| `LockGuard` (custom RAII)          | `std::lock_guard` / `std::scoped_lock` |
-| `UniqueLock` (custom moveable)     | `std::unique_lock`                   |
+`lnx::mutex` wraps `pthread_mutex_t` directly with default
+(`PTHREAD_MUTEX_NORMAL`) attributes. This bypasses `std::mutex` so that
+`lock` / `try_lock` / `unlock` can be honestly `noexcept` — pthread is a C
+API and cannot throw, while `std::mutex::lock` is specified to throw
+`std::system_error`, which would weaken the `Win::Mutex` contract the
+wrapper is trying to deliver. Method names match `Win::Mutex` directly.
 
-**Default:** `std::mutex` everywhere. Only switch to adaptive `pthread_mutex_t`
-with measurement.
+| Win32                              | Linux                                |
+|------------------------------------|--------------------------------------|
+| `CRITICAL_SECTION`                 | `pthread_mutex_t` (default attrs = `PTHREAD_MUTEX_NORMAL`) |
+| `InitializeCriticalSection`        | `pthread_mutex_init(.., nullptr)`    |
+| `InitializeCriticalSectionEx(.., spinCount, 0)` | `pthread_mutex_init(.., &attr)` with `pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ADAPTIVE_NP)` (Linux extension) — only if profiling demands it |
+| `EnterCriticalSection`             | `pthread_mutex_lock`                 |
+| `TryEnterCriticalSection`          | `pthread_mutex_trylock` (returns `0` / `EBUSY`) |
+| `LeaveCriticalSection`             | `pthread_mutex_unlock`               |
+| `DeleteCriticalSection`            | `pthread_mutex_destroy`              |
+| `LockGuard` (custom RAII)          | `lnx::lock_guard` (RAII on `lnx::mutex`) |
+| `UniqueLock` (custom moveable)     | `lnx::unique_lock` (movable RAII on `lnx::mutex`) |
+| Custom RAII vocabulary (`Win::Mutex`, `Win::LockGuard`, `Win::UniqueLock`) | `lnx::mutex`, `lnx::lock_guard`, `lnx::unique_lock` in `src/sync/mutex.h` (pthread direct) |
+
+**Default:** `lnx::mutex` (pthread direct, `PTHREAD_MUTEX_NORMAL`) everywhere.
+Adaptive `pthread_mutex_t` only with measurement. `std::mutex` is not used in
+the project; its `system_error`-throwing `lock()` does not fit the
+"infallible-or-UB" contract inherited from `Win::Mutex`.
 
 **Origins:**
 - `WindowsLibrary/Library/Include/WinMutex.h:7-26, 49-117`
@@ -84,22 +95,36 @@ with measurement.
 
 ## Reader/writer locks
 
-| Win32                              | Linux / C++                          |
-|------------------------------------|--------------------------------------|
-| `SRWLOCK`                          | `std::shared_mutex` (C++17)          |
-| `InitializeSRWLock`                | constructor                          |
-| `AcquireSRWLockExclusive`          | `std::shared_mutex::lock`            |
-| `TryAcquireSRWLockExclusive`       | `std::shared_mutex::try_lock`        |
-| `ReleaseSRWLockExclusive`          | `std::shared_mutex::unlock`          |
-| `AcquireSRWLockShared`             | `std::shared_mutex::lock_shared`     |
-| `TryAcquireSRWLockShared`          | `std::shared_mutex::try_lock_shared` |
-| `ReleaseSRWLockShared`             | `std::shared_mutex::unlock_shared`   |
-| `SharedLockGuard` (custom)         | `std::shared_lock`                   |
-| `ExclusiveLockGuard` (custom)      | `std::lock_guard<std::shared_mutex>` |
+`lnx::shared_mutex` wraps `pthread_rwlock_t` directly with default attributes.
+Same rationale as `lnx::mutex`: pthread is C, cannot throw, so the WinAPI
+infallibility contract is delivered honestly under `noexcept`. Method names
+follow `Win::SharedMutex`: `lock_exclusive` / `try_lock_exclusive` /
+`unlock_exclusive` / `lock_shared` / `try_lock_shared` / `unlock_shared`.
+Std-style `lock` / `try_lock` aliases are intentionally not provided.
 
-**Caveat:** `std::shared_mutex` is writer-preferring on libstdc++ (uses
-glibc's pthread rwlock). If readers must be preferred, build a custom rwlock
-on `std::condition_variable` — out of scope for v1.
+| Win32                              | Linux                                |
+|------------------------------------|--------------------------------------|
+| `SRWLOCK`                          | `pthread_rwlock_t` (default attrs)   |
+| `InitializeSRWLock`                | `pthread_rwlock_init(.., nullptr)`   |
+| `AcquireSRWLockExclusive`          | `pthread_rwlock_wrlock`              |
+| `TryAcquireSRWLockExclusive`       | `pthread_rwlock_trywrlock`           |
+| `ReleaseSRWLockExclusive`          | `pthread_rwlock_unlock`              |
+| `AcquireSRWLockShared`             | `pthread_rwlock_rdlock`              |
+| `TryAcquireSRWLockShared`          | `pthread_rwlock_tryrdlock`           |
+| `ReleaseSRWLockShared`             | `pthread_rwlock_unlock` (same call — POSIX releases whichever mode is held) |
+| (no SRWLOCK destroy)               | `pthread_rwlock_destroy`             |
+| `SharedLockGuard` (custom)         | `lnx::shared_lock_guard` (RAII on `lnx::shared_mutex`) |
+| `ExclusiveLockGuard` (custom)      | `lnx::exclusive_lock_guard` (RAII on `lnx::shared_mutex`) |
+| Custom RAII vocabulary (`Win::SharedMutex`, `Win::SharedLockGuard`, `Win::ExclusiveLockGuard`) | `lnx::shared_mutex`, `lnx::shared_lock_guard`, `lnx::exclusive_lock_guard` in `src/sync/mutex.h` (pthread direct) |
+
+**Caveat:** glibc's `pthread_rwlock_t` is writer-preferring. If readers must
+be preferred, build a custom rwlock on a futex — out of scope for v1.
+
+**Unified unlock.** POSIX `pthread_rwlock_unlock` releases whichever mode the
+calling thread holds, unlike Win's split `ReleaseSRWLockExclusive` /
+`ReleaseSRWLockShared`. `lnx::shared_mutex` keeps the two `unlock_*` methods
+separate to mirror `Win::SharedMutex`; they both forward to
+`pthread_rwlock_unlock`.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/SharedMutex.h:5`
