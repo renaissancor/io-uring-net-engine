@@ -37,6 +37,8 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`network/packet_header.md`](network/packet_header.md)              | `src/network/packet_header.h`                                | 8-byte wire header on every packet |
 | [`network/session.md`](network/session.md)                          | `src/network/{session,session_pool}.{h,cpp}`                 | pre-allocated session slot with embedded recv/send ring buffers |
 | [`network/packet_pool.md`](network/packet_pool.md)                  | `src/network/packet_pool.{h,cpp}`                            | per-content-thread pre-allocated cs_packet/sc_packet pool |
+| [`network/cs_packet.md`](network/cs_packet.md)                      | `src/network/cs_packet.{h,cpp}`                              | typed reader over an incoming packet (client → server) |
+| [`network/sc_packet.md`](network/sc_packet.md)                      | `src/network/sc_packet.{h,cpp}`                              | typed writer for an outgoing packet (server → client) |
 
 ## Conventions
 
