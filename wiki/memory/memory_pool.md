@@ -2,14 +2,30 @@
 
 ## Purpose
 
-Provide O(1) allocation/free for small objects (≤2048 bytes) by routing every
-`xnew<T>()` call through one of 48 pre-bucketed free lists. The pool fragments
-the address space at well-known boundaries, eliminates per-alloc free-list
-traversal, and avoids any synchronization on the hot path because each thread
-owns its own pool.
+Provide O(1) allocation/free for small **game-state objects** (≤2048 bytes)
+by routing every `xnew<T>()` call through one of 48 pre-bucketed free lists.
+The pool fragments the address space at well-known boundaries, eliminates
+per-alloc free-list traversal, and avoids any synchronization on the hot
+path because each content thread owns its own pool.
 
-This is the single most important primitive in the project. Every other
-subsystem (Session, RingBuffer, JobQueue, packet objects) allocates through it.
+## Scope — Tier 1 (game state) only
+
+This pool is **Tier 1 of three memory tiers** (see [[threading_model]]).
+TLS Memory is exclusively for **game state / content objects** allocated
+and freed by content threads during gameplay — examples: `Player`,
+`Inventory`, `Item`, `Buff`, `Spell`, `Quest`, `Channel`, `Room`, `Match`.
+
+The following are **NOT** allocated from TLS Memory:
+
+- `session` structs + `recv_ring_buffer` + `send_ring_buffer` — live in
+  [[session]] (Tier 2, pre-allocated at server startup).
+- `cs_packet` and `sc_packet` — live in [[packet_pool]] (Tier 3, pre-
+  allocated per-content-thread buckets).
+- io_uring buffer registrations — owned by network threads, not TLS.
+
+The split exists because Tiers 2 and 3 need either cross-thread access
+(sessions, ring buffers) or strict O(1) predictability under bursts
+(packets), neither of which fits TLS Memory's design assumptions.
 
 ## Reference origin
 
@@ -285,9 +301,13 @@ size makes copy semantics wasteful) and have a separate design path.
 
 ## Open questions
 
-1. **Budget value.** 64 MiB per thread is a starting point. May need
-   per-thread-class tuning (e.g., accept threads 64 MiB, worker threads
-   256 MiB). Decide once we have a real workload to measure.
+1. **Budget value.** 64 MiB per content thread is a starting point. The
+   scope narrowing to game state only (ring buffers and packets now live
+   in their own pools — see [[session]] and [[packet_pool]]) means the
+   TLS budget is smaller than originally estimated. Network threads do
+   not need a TLS Memory instance at all (they don't allocate
+   game-state objects). Decide actual size once we have a real workload
+   to measure.
 2. **Bucket sizes.** 48 entries from 32 to 2048 is the reference layout. If
    measurement shows uneven distribution, retune. Don't pre-tune.
 3. **Header size.** 16 bytes is wasteful for the smallest buckets (32 B

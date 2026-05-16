@@ -31,15 +31,12 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`sync/lock_free_stack.md`](sync/lock_free_stack.md)                | `src/sync/lock_free_stack.{h,cpp}`                           | Treiber stack (replaces Win32 `SLIST`) |
 | [`diagnostic/profiler_deadlock.md`](diagnostic/profiler_deadlock.md) | `src/diagnostic/profiler_deadlock.{h,cpp}`                  | lock-order graph + cycle detection |
 | [`diagnostic/profiler_scope.md`](diagnostic/profiler_scope.md)      | `src/diagnostic/profiler_scope.{h,cpp}`                      | RAII scope-timing profiler |
-| [`runtime/thread.md`](runtime/thread.md)                            | `src/runtime/thread.{h,cpp}`                                | pthread-backed native thread wrapper |
-| [`runtime/coroutine_task.md`](runtime/coroutine_task.md)            | `src/runtime/task.{h,cpp}`                                   | C++20 coroutine `task<T>`  |
-| [`runtime/job_queue.md`](runtime/job_queue.md)                      | `src/runtime/job_queue.{h,cpp}`                              | per-entity FIFO serializer |
-| [`runtime/thread_context.md`](runtime/thread_context.md)            | `src/runtime/thread_context.{h,cpp}`                         | TLS context for reactor threads |
-| [`network/io_uring_reactor.md`](network/io_uring_reactor.md)        | `src/network/reactor.{h,cpp}` (uses `liburing`)              | the io_uring event loop    |
-| [`network/listener_and_service.md`](network/listener_and_service.md) | `src/network/{listener,service}.{h,cpp}`                    | bind/accept + reactor owner |
-| [`network/session.md`](network/session.md)                          | `src/network/session.{h,cpp}`                                | one TCP connection's coroutine + buffers |
-| [`network/packet_framing.md`](network/packet_framing.md)            | `src/network/packet_framing.{h,cpp}`                         | `[uint16 size │ uint16 id]` framer |
-| [`network/packet_handler.md`](network/packet_handler.md)            | *(deferred — no source file)*                                 | DEFERRED out of v1; dispatcher is product-side. File is a status note pointing to `iouring-net-server/wiki/server/dispatch.md`. |
+| [`runtime/thread.md`](runtime/thread.md)                            | `src/runtime/thread.{h,cpp}`                                 | pthread-backed native thread wrapper |
+| [`runtime/thread_context.md`](runtime/thread_context.md)            | `src/runtime/thread_context.{h,cpp}`                         | TLS context per network/content thread |
+| [`runtime/threading_model.md`](runtime/threading_model.md)          | *(project-wide constraint)*                                  | two-tier reactor + three-tier memory model |
+| [`network/packet_header.md`](network/packet_header.md)              | `src/network/packet_header.h`                                | 8-byte wire header on every packet |
+| [`network/session.md`](network/session.md)                          | `src/network/{session,session_pool}.{h,cpp}`                 | pre-allocated session slot with embedded recv/send ring buffers |
+| [`network/packet_pool.md`](network/packet_pool.md)                  | `src/network/packet_pool.{h,cpp}`                            | per-content-thread pre-allocated cs_packet/sc_packet pool |
 
 ## Conventions
 

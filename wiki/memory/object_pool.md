@@ -2,10 +2,18 @@
 
 ## Purpose
 
-A typed, intrusive-style pool layered on top of `MemoryPool`. Hands out
-`std::shared_ptr<T>` whose deleter returns the object to the pool instead of
-calling `delete`. Used for short-lived, frequently-recycled objects like
-`Session`, `Packet`, and per-job task structs.
+A typed, intrusive-style pool layered on top of `MemoryPool` (the TLS
+Memory tier — see [[memory_pool]]). Hands out `std::shared_ptr<T>` whose
+deleter returns the object to the pool instead of calling `delete`. Used
+for short-lived, frequently-recycled **game-state objects** owned by a
+single content thread.
+
+**Scope** — like its underlying MemoryPool, this pool is for **Tier 1
+(game state)** allocations only. Sessions live in the [[session]] pool
+(Tier 2). Packet objects live in the [[packet_pool]] (Tier 3). Both
+have dedicated pre-allocated pools because their workload (cross-thread
+access / O(1) predictability under bursts) doesn't fit TLS Memory's
+design assumptions.
 
 Conceptually the same shape as the reference `ObjectPool<T>` but expressed
 in idiomatic modern C++ (CTAD, perfect forwarding, `std::shared_ptr` with

@@ -1,190 +1,216 @@
-# Session — one TCP connection driven by a coroutine
+# session — pre-allocated network I/O state per connection
 
 ## Purpose
 
-`Session` represents one accepted (or connected) TCP connection. It owns
-the socket fd, a recv ring buffer, a send ring buffer, and the coroutine
-that drives I/O on that connection. The coroutine is started by the
-reactor when a connection is accepted (or connected); it runs until the
-peer closes, the application closes, or the reactor shuts down.
+The `session` struct + its two ring buffers + sequence windows hold all
+per-connection network I/O state. Sessions are pre-allocated at server
+startup into the **session pool** (Tier 2 of three memory tiers — see
+[[threading_model]]) and reused across the server's lifetime. Slots are
+never freed back to the OS until process exit; instead, a closed session
+returns its slot to the pool's free list for reuse.
 
-Replaces the `Session` struct in `SelectServer/FighterOOP/Net.h:39`,
-which was a passive struct fed by an external select loop. The new
-session is the active driver.
+This design choice is deliberate:
 
-## Reference origin
+> Real-time servers prioritize **predictable latency** over memory
+> efficiency. Pre-allocating MAX_SESSIONS slots at startup costs RAM the
+> OS would have given us anyway. Avoiding runtime growth eliminates the
+> failure mode where the server is fast at 1000 clients but laggy at 8000
+> clients.
 
-- `SelectServer/FighterOOP/Net.h:39` — passive `Session { socket,
-  recvBuffer, sendBuffer, sockaddr }`.
-- `IOCP_Rookiss` — no `Session` implementation exists (declared in
-  intent only).
+## Slot layout
 
-## Public API sketch
+Each session slot contains:
 
 ```cpp
-namespace iouring_net::net {
+struct alignas(64) session {
+    // ─── Identity (read-only after init, no synchronization) ──────────
+    uint32_t        session_id;          // slot index in pool
+    int             socket_fd;           // assigned at accept
+    uint32_t        network_thread_id;   // which network thread services I/O
+    uint32_t        content_thread_id;   // which content thread runs handlers
+    uint32_t        interaction_unit_id; // hashed at accept; determines content_thread
 
-class session : public std::enable_shared_from_this<session> {
+    // ─── Recv path (network writes, content reads — SPSC) ─────────────
+    spsc_ring       recv_ring_buffer;    // 64 KiB raw bytes
+
+    // ─── Send path (content writes, network reads — SPSC) ─────────────
+    spsc_ring       send_ring_buffer;    // 16 KiB raw bytes
+
+    // ─── Sequence tracking (content-thread-owned) ─────────────────────
+    uint16_t        next_send_seq;       // increments per outgoing packet
+    sequence_window recv_seq_window;     // last N sequence numbers seen for dedup
+
+    // ─── State (content-thread-owned) ─────────────────────────────────
+    session_state   state;               // CONNECTING / AUTH / ACTIVE / CLOSING
+    uint64_t        user_id;             // 0 until auth complete
+    // ... game-specific fields (current channel/zone/match pointer, etc.) ...
+
+    // ─── Pool linkage (touched only by accept / close paths) ──────────
+    session*        next_free;           // intrusive free-list link when in pool
+};
+```
+
+`alignof(session) == 64` ensures each session lives on its own cache line
+(or set of cache lines) — no false sharing between adjacent slots, which
+matters because different threads access different slots concurrently.
+
+## Session pool — process-wide, startup-allocated
+
+```cpp
+class session_pool {
 public:
-    using ptr = std::shared_ptr<session>;
+    static void init(size_t max_sessions);   // called once at server startup
+    static void shutdown();                  // called once at process exit
 
-    session(reactor& rx, int fd, sockaddr_in peer);
-    ~session();
+    static session* claim();                 // pop from free list; returns null if exhausted
+    static void     release(session* s);     // clear state, push to free list
 
-    // Driver — typically started by listener::on_accept
-    iouring_net::rt::task<void> run();
-
-    // Outbound write — appends to send ring, schedules a send if idle.
-    // Awaits backpressure if the send ring is full.
-    iouring_net::rt::task<void> send(std::span<const std::byte> bytes);
-
-    // Application-level disconnect; sends FIN and tears down the coroutine.
-    void disconnect();
-
-    // Hooks (set by application before run() is awaited)
-    std::function<iouring_net::rt::task<void>(session&, frame_view)>
-        on_packet;
-    std::function<void(session&)>
-        on_disconnect;
-
-    // Accessors
-    int                fd()        const { return fd_; }
-    const sockaddr_in& peer()      const { return peer_; }
-    bool               connected() const { return connected_; }
+    static session* by_id(uint32_t session_id);  // O(1) lookup by slot index
 
 private:
-    reactor&                          reactor_;
-    int                               fd_;
-    sockaddr_in                       peer_;
-    bool                              connected_{true};
-
-    iouring_net::buf::recv_ring_buffer recv_buf_;
-    iouring_net::buf::send_ring_buffer send_buf_;
-
-    iouring_net::sync::mutex           send_lock_;        // only if cross-thread send
-    bool                               send_in_flight_{false};
+    static std::byte* region_;               // mmap'd region, MAX_SESSIONS * sizeof(session)
+    static size_t     capacity_;
+    static session*   free_head_;            // intrusive free list
+    static lnx::mutex free_list_lock_;       // accept thread + close path contention only
 };
-
-} // namespace iouring_net::net
 ```
 
-## Linux design
+### Lifecycle
 
-**Run loop.**
+```
+[Server startup]
+  session_pool::init(MAX_SESSIONS)
+    mmap one region for MAX_SESSIONS × sizeof(session)
+    initialize every slot's recv_ring_buffer + send_ring_buffer
+    thread every slot into the free list
 
-```cpp
-task<void> session::run() {
-    while (connected_) {
-        auto writable = recv_buf_.writable_contig();
-        auto result = co_await reactor_.async_recv(fd_, writable);
-        if (!result || *result == 0) {
-            disconnect();
-            break;
-        }
-        recv_buf_.commit_write(*result);
+[Connection accept]
+  s = session_pool::claim()              // pop from free list
+  s->socket_fd = accepted_fd
+  s->session_id = (s - region_base) / sizeof(session)
+  s->network_thread_id = ...             // accept-policy decision
+  s->content_thread_id = hash(interaction_unit_id) % M
+  s->state = CONNECTING
+  ... register socket with network thread's io_uring ...
 
-        while (auto frame = recv_buf_.peek_packet()) {
-            co_await on_packet(*this, *frame);
-            recv_buf_.commit_read(frame->total_size);
-        }
-    }
-    if (on_disconnect) on_disconnect(*this);
-    co_await reactor_.async_close(fd_);
-}
+[During connection lifetime]
+  network thread + content thread access s concurrently
+  via SPSC ring buffers + ownership-discipline rules
+
+[Connection close]
+  network thread or content thread observes close
+  drain any pending io_uring ops for this fd
+  s->state = CLOSING
+  reset ring buffer cursors
+  reset sequence windows
+  close socket_fd
+  session_pool::release(s)               // push back to free list
+
+[Server shutdown]
+  session_pool::shutdown()
+    iterate active sessions, force-close
+    munmap region
 ```
 
-The packet handler is itself a coroutine — `on_packet` returns
-`task<void>`, so the session can `co_await` per-packet processing
-without blocking the recv pipeline. The handler can hop to a job queue
-or another reactor and resume on the original session thread.
+## Concurrency discipline
 
-**Send path.**
+Multiple threads can access the same session slot, but only via specific
+disciplined patterns:
 
-```cpp
-task<void> session::send(std::span<const std::byte> bytes) {
-    while (!send_buf_.try_append(bytes)) {
-        co_await send_buf_.async_wait_writable();      // backpressure
-    }
-    if (!send_in_flight_) {
-        send_in_flight_ = true;
-        kick_send();                                    // chains the send
-    }
-}
+| Field                              | Writer                      | Reader            | Mechanism                            |
+|------------------------------------|-----------------------------|--------------------|--------------------------------------|
+| `recv_ring_buffer` bytes           | network thread              | content thread    | SPSC ring (lock-free)                |
+| `send_ring_buffer` bytes           | content thread              | network thread    | SPSC ring (lock-free)                |
+| `socket_fd`, `session_id`          | accept thread (init only)   | both              | Read-only after init, no sync needed |
+| `state`, `user_id`, game fields    | content thread              | content thread    | Owned by content thread; network doesn't read |
+| `next_send_seq`, `recv_seq_window` | content thread              | content thread    | Owned by content thread              |
+| `next_free` (pool link)            | accept thread / close path  | accept thread     | Protected by `free_list_lock_`       |
 
-void session::kick_send() {
-    auto out = send_buf_.readable_contig();
-    if (out.empty()) {
-        send_in_flight_ = false;
-        return;
-    }
-    // Fire-and-forget coroutine bound to this reactor:
-    [&]() -> task<void> {
-        auto r = co_await reactor_.async_send(fd_, out);
-        if (r) {
-            send_buf_.commit_read(*r);
-            kick_send();                                // tail-call chain
-        } else {
-            disconnect();
-        }
-    }();                                                // started lazily
-}
-```
+Network thread accesses **only** the two ring buffers and `socket_fd` on
+the hot path. It does not read `state`, `user_id`, or game fields. This
+minimal-surface discipline prevents most cross-thread cache coherency
+traffic.
 
-**Wire framing.** `recv_buf_.peek_packet` parses
-`[uint16 size | uint16 id]` and returns a `frame_view{size, id,
-payload_span}`. See `wiki/network/packet_framing.md`.
+## Sizing
 
-**Close semantics.** `disconnect()`:
-1. Marks `connected_ = false`.
-2. Cancels in-flight recv via `io_uring_prep_cancel`.
-3. Lets the run-loop fall through to `async_close`.
-The session lives as long as a `shared_ptr` is held. The reactor and the
-listener typically hold one reference each; the run() coroutine extends
-the lifetime via `shared_from_this()` inside the coroutine frame.
+Per-slot memory:
 
-**Backpressure.** Send ring full → producer coroutine suspends on
-`async_wait_writable`. The send-completion handler calls `notify` on the
-condition. v1 implements the simple version with a per-session
-`std::condition_variable_any` adapter for coroutines. (More efficient
-implementations replace this with a signalfd-based event; defer.)
+| Component               | Size       |
+|-------------------------|------------|
+| `session` struct fields | ~256 B     |
+| `recv_ring_buffer`      | 64 KiB     |
+| `send_ring_buffer`      | 16 KiB     |
+| Padding (cache align)   | <64 B      |
+| **Per slot total**      | **~80 KiB**|
 
-## Concurrency & ownership
+For target portfolio scope (`MAX_SESSIONS = 10000`):
 
-- v1: session is thread-affined to its reactor. All `send` calls happen
-  on the reactor thread. No `send_lock_` needed in v1; the field is
-  declared so v2 cross-thread sends from worker threads have a slot.
-- Lifetime: `shared_ptr<session>`. Owners: listener (during accept→
-  application handoff), reactor (during in-flight ops via the awaiter
-  control block — but those keep the coroutine handle alive, which keeps
-  the session alive transitively).
-- Coroutine pinning: `run()` uses `auto self = shared_from_this()` in the
-  first line so the session lives at least until run() returns.
+- Total pool size: 10000 × 80 KiB = ~800 MiB
+- Allocated once via single `mmap()` at startup
+- Distributed across no specific thread — pool region is process-wide
+- Not part of any TLS Memory budget
+
+For production-scale targets (`MAX_SESSIONS = 100000`):
+
+- Total pool size: 100000 × 80 KiB = ~8 GiB
+- Same single mmap, just bigger
+- Server machine sized accordingly (32 GiB+ RAM)
+
+## Why the slot, not separate allocations
+
+Allocating `session` + `recv_buffer` + `send_buffer` as separate objects
+would work but has drawbacks:
+
+- Three allocations per session vs one
+- Three regions of memory per session that may be on different pages
+- Slot indexing by `session_id` becomes harder (needs an indirection map)
+
+Embedding all three into one slot:
+
+- One mmap'd region for everything
+- One pointer (or one `session_id`) reaches the session + both buffers
+- Cache locality between the struct fields and the buffer head/tail
+- `session_id` is naturally a slot index → O(1) lookup
 
 ## Test plan
 
-- Unit: connect a fake peer, send 100 packets of various sizes, assert
-  all received in order.
-- Unit: peer closes mid-recv — session emits `on_disconnect` exactly
-  once, fd is closed.
-- Unit: backpressure — fill send ring to capacity, assert producer
-  suspends, drain on the receiver side, assert producer resumes.
-- Stress: 1000 simultaneous sessions on one reactor, each echoing
-  packets at 1 kHz; assert correctness for 60 seconds.
-- TSan: same workload under thread sanitizer.
+- Unit: `session_pool::init(N)` then `claim()` N times returns N distinct
+  non-null sessions; `claim()` at N+1 returns null.
+- Unit: `release()` followed by `claim()` returns a session in clean
+  initial state — buffers empty, state == CONNECTING.
+- Unit: `by_id(s.session_id) == &s` for every claimed session.
+- Concurrency: 4 threads (simulating network threads) each write to their
+  assigned session's `recv_ring_buffer`; 4 other threads (simulating
+  content threads) each read from one session's `recv_ring_buffer`.
+  Verify no data loss, no torn reads (run under TSan).
+- Stress: cycle claim/release 1 M times in a tight loop; verify pool
+  stays consistent.
+- Memory: assert via `/proc/self/maps` that exactly one large anonymous
+  mapping exists for the session pool.
 
 ## Open questions
 
-1. **`enable_shared_from_this`** vs. intrusive ref-count. The reference
-   repo uses raw pointers and manual ref-counting in places. We use
-   `shared_ptr` for clarity; revisit only if profiling demands it.
-2. **Send batching.** Multiple `send` calls within one frame can be
-   coalesced into one `async_send`. v1 does this implicitly via the
-   send ring (one in-flight send per session). v2 may add scatter-gather
-   via `writev`-shaped multi-iovec sends.
-3. **Read coalescing under multishot recv.** When we move to multishot
-   recv (kernel 6.0+), the run-loop changes shape — multiple CQEs
-   per accepted connection without re-arming. The packet-parse loop
-   stays identical.
-4. **Half-close.** TCP supports independent half-closes; we currently
-   collapse them. If application semantics ever need a clean `shutdown(WR)`
-   while still reading, expose `session::shutdown_write()`.
+1. **MAX_SESSIONS value.** Compile-time constant or runtime-configurable?
+   Compile-time is simpler; runtime gives ops flexibility.
+2. **Slot cleanup on release.** What exactly resets between sessions?
+   At minimum: ring buffer cursors, sequence windows, state field. Game
+   fields the application clears. Define a clean `session::reset()`
+   sequence.
+3. **Free-list locking.** A single mutex on the free list is fine for
+   moderate accept rates but could bottleneck at very high connection
+   churn. If churn becomes a hot path, consider lock-free pool free list
+   or per-network-thread free-list segments.
+4. **Slot zero-init at startup.** Should slots start zero-filled, or is
+   field-by-field init sufficient? Zero-init is simpler; field init is
+   slightly faster on startup.
+5. **NUMA awareness.** On NUMA machines, should the session pool be
+   allocated per-socket and slots assigned to network/content threads on
+   the same socket? Deferred until profiling indicates NUMA pressure.
+
+## See also
+
+- [[memory_pool]] — TLS Memory tier (game state); explicitly NOT used for sessions
+- [[packet_pool]] — Packet pool tier; sister design with same pre-allocation principle
+- [[threading_model]] — the three-tier memory model + two-tier reactor
+- [[packet_header]] — header read from `recv_ring_buffer` during framing
+- `wiki/sync/spsc_ring.md` (deferred) — lock-free SPSC ring used for `recv_ring_buffer` and `send_ring_buffer`
