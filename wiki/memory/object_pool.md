@@ -85,15 +85,22 @@ for `JobQueue`'s internal vector and a few telemetry containers.
 
 ## Concurrency & ownership
 
-- `ObjectPool<T>` is stateless (all functions static); thread-safety derives
-  entirely from `MemoryPool`'s lock-free free list.
+- `ObjectPool<T>` is stateless (all functions static); thread-safety inherits
+  entirely from [[memory_pool]]'s TLS singleton model.
+- The **alloc-thread == free-thread invariant** propagates upward: an object
+  produced by `ObjectPool<T>::pop` on thread A MUST have `push` called on
+  thread A. The pool itself cannot enforce this — it's a contract on callers.
 - `shared_ptr` ref-count is `std::atomic` per the C++ standard library.
   Thread-safe for ref-count manipulation across threads; the pointee itself
   is not magically thread-safe.
-- Deleter runs on the thread that drops the last `shared_ptr`. That thread
-  may differ from the thread that allocated. The destructor must therefore
-  be safe to invoke from an arbitrary thread (no thread-affinity assertions
-  in `~Session`, etc.).
+- **`make_shared` is single-thread only.** A `std::shared_ptr<T>` returned by
+  `ObjectPool<T>::make_shared` carries a deleter that calls `ObjectPool<T>::push`
+  → `mem::release`. Per [[threading_model]], cross-thread data transfer copies
+  bytes via the receiver's per-thread inbox; **pointers never cross threads**.
+  Therefore the last reference always drops on the allocating thread, the
+  deleter runs there, and the alloc-thread == free-thread invariant holds
+  trivially. Callers who pass a `shared_ptr<T>` across threads are violating
+  the project's threading model, not the pool's contract.
 
 ## Test plan
 
@@ -115,6 +122,14 @@ for `JobQueue`'s internal vector and a few telemetry containers.
    ref-counting; we follow suit. If profiling shows control-block allocation
    is a hot spot, revisit with `boost::intrusive_ptr` or hand-rolled
    equivalent — v2 question.
-3. **Pool_alloc ergonomics for std::pmr.** A `std::pmr::memory_resource`
-   adapter would let `std::pmr::vector<T>` use the pool without templating
-   on `PoolAllocator`. Worth adding once we have a use case.
+3. **`std::pmr` ergonomics.** A `std::pmr::memory_resource` adapter would let
+   `std::pmr::vector<T>` use the pool without templating on `PoolAllocator`.
+   Worth adding once we have a use case.
+4. **Cross-thread `shared_ptr`** — **resolved upstream by [[threading_model]].**
+   The project rule is: objects do not cross threads; their bytes do, copied
+   via per-thread MPSC inboxes. Therefore `shared_ptr<T>` stays single-thread,
+   the deleter always runs on the allocating thread, and the alloc-thread ==
+   free-thread invariant holds. No handoff deleter, no intrusive ref-count,
+   no raw-`mmap` escape needed for ordinary pool objects. The packet /
+   `serial_buffer` carveout (large payloads exempt from copy-cross) lives
+   in the threading-model doc, not here.
