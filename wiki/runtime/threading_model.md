@@ -44,6 +44,54 @@ Mu Online, Diablo Immortal.
 Boundary case: **WoW-style phased MMOs** — phasing is fine-grained
 channeling driven by player progression and fits this model.
 
+## v1 scope — what is NOT implemented yet
+
+The architecture described in this document is the **complete intended
+design**. v1 implements a subset; everything else is documented here for
+forward reference and to anchor future contributors' mental models — not
+because v1 ships it.
+
+### What v1 implements
+
+- Two-tier reactor (network threads + content threads).
+- Three-tier memory (TLS Memory + Session pool + Packet pool).
+- **Network ↔ Content** cross-thread path via SPSC ring buffers per session.
+- Sharding rule (sessions assigned to a content thread by interaction-unit
+  key at accept time; never migrate).
+- Foundational-layer discipline (no `std::` STL in `src/sync/`,
+  `src/runtime/`, `src/memory/`, `src/sds/`, `src/network/`).
+
+### What v1 explicitly does NOT implement
+
+**Content ↔ Content cross-thread messaging (inbox)** — deferred. The
+inbox is a substantial separate subsystem in its own right: lock-free
+MPSC ring, message format, queue-full policy, per-thread sizing,
+serialization schema for cross-thread messages, cross-thread dispatch
+table. It earns its own design pass when the first cross-interaction-
+unit feature actually lands in product scope. **Discussing the inbox
+under "dispatcher" scope is wrong** — it's a whole project topic of its
+own.
+
+Features that **require** the inbox and are therefore out of v1 scope:
+
+- Global chat across channels
+- Cross-channel whisper / private message
+- Friend status notifications across channels
+- Cross-channel guild chat
+- Cross-channel auction-house notifications
+- Server-wide broadcast announcements ("server reboot in 5 minutes")
+
+For v1, the threading model is: **each content thread is fully isolated.
+All interactions stay within one channel / match / room / instance.** No
+inter-channel features. The application is designed to live within this
+constraint; if it ever needs a cross-channel feature, that is the trigger
+for the inbox design conversation, not a v1 work item.
+
+The application-design guidance section below ("minimize cross-content-
+thread interaction") tells you how to structure features so they do not
+need the inbox in the first place — and is therefore even more relevant
+for v1 than it would be for v2.
+
 ## Topology — two-tier reactor
 
 The server runs **three thread types**, each with a single role:
@@ -209,7 +257,12 @@ Mediated by the session's two SPSC ring buffers:
 Both rings are lock-free with cache-line-padded head/tail to avoid false
 sharing. See `wiki/sync/spsc_ring.md` (deferred design).
 
-### Content ↔ Content (per cross-interaction-unit message, low frequency)
+### Content ↔ Content (per cross-interaction-unit message, low frequency) — DEFERRED to v2+
+
+> **This subsystem is NOT implemented in v1.** See the
+> [v1 scope](#v1-scope--what-is-not-implemented-yet) section above for the
+> explicit deferral and the list of features that require it. The design
+> below is documented for forward reference only; do not implement in v1.
 
 Mediated by per-content-thread MPSC inboxes:
 
@@ -219,7 +272,9 @@ Mediated by per-content-thread MPSC inboxes:
 - Used for chat across channels, friend status, matchmaking handoff, etc.
 
 The application design guidance below still applies: minimize content↔
-content traffic by sharding aggressively by interaction unit.
+content traffic by sharding aggressively by interaction unit. For v1
+specifically, **the application must be designed so cross-channel
+features are not needed at all** — there is no inbox to use.
 
 ## Sharding rule — assign by interaction unit
 
@@ -297,7 +352,8 @@ game design).
 > **Network ↔ content:** SPSC ring buffers per session (`recv_ring_buffer`,
 > `send_ring_buffer`).
 >
-> **Content ↔ content:** MPSC inbox per content thread.
+> **Content ↔ content:** MPSC inbox per content thread (DEFERRED to v2+;
+> v1 has no cross-channel features and no inbox subsystem).
 >
 > **Foundational primitives (sync/runtime/memory/sds):** no `std::` STL,
 > minimize glibc malloc surface.
@@ -392,12 +448,13 @@ are allowed.
 
 ## Open questions
 
-1. **Inbox shape.** Bytes-in-queue (Seastar style — fixed-size MPSC ring
-   of raw bytes, sender serializes inline) vs. handle-in-queue (sender
-   allocates bytes in a small shared region, queue carries pointer +
-   size). Leaning bytes-in-queue.
-2. **Inbox queue-full policy.** Drop, retry, block? Probably per message
-   class.
+1. **Inbox shape** — DEFERRED to v2+. Bytes-in-queue (Seastar style —
+   fixed-size MPSC ring of raw bytes, sender serializes inline) vs.
+   handle-in-queue (sender allocates bytes in a small shared region,
+   queue carries pointer + size). Leaning bytes-in-queue. Earns its own
+   design conversation when the first cross-channel feature appears.
+2. **Inbox queue-full policy** — DEFERRED to v2+. Drop, retry, block?
+   Probably per message class. Decide alongside the inbox itself.
 3. **Network ↔ content thread mapping.** N:M = how many of each, and how
    are sessions assigned (which network thread serves which sessions)?
 4. **Packet pool sizing.** How many `cs_packet` / `sc_packet` pre-
@@ -405,7 +462,8 @@ are allowed.
 5. **Session pool max size.** What's `MAX_SESSIONS`? Likely 10K–100K for
    portfolio scope. Affects startup memory footprint directly.
 6. **Shutdown discipline.** Network threads finish in-flight io_uring
-   ops, content threads drain inboxes, then process can exit cleanly.
+   ops, content threads finish in-flight ticks, then process can exit
+   cleanly. (In v2+ this also includes draining inboxes before exit.)
 7. **Session slot reuse cleanup.** When a session closes, what cleanup
    runs before the slot returns to the pool? Sequence-window reset,
    buffer drain, fd close. Define precisely.
