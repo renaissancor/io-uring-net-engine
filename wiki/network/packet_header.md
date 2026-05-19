@@ -1,5 +1,17 @@
 # packet_header — 8-byte fixed packet header for the wire protocol
 
+> **2026-05-19 evening pivot — partially superseded.** The reception
+> flow at the bottom of this spec (`mem::alloc(h.size)` + drain into
+> `serial_buffer`) predates the SoA + session-as-handle pivot. Current
+> state: incoming frames are zero-copy `frame_view` slices into the
+> recv ring (stitched into a channel-local scratch buffer only on
+> wrap-straddle), not per-frame pool allocations. The 8 B header
+> layout, opcode-direction convention, sequence/flags/version
+> semantics, little-endian wire format, and design rationale in this
+> spec are UNCHANGED. See
+> `docs/discussions/2026-05-19-chat-server-data-layout.md` and the
+> `project-chat-server-v1` memory entry for the current shape.
+
 ## Purpose
 
 Define the binary header that prefixes every packet on the wire. Establishes

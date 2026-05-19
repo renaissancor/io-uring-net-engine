@@ -1,5 +1,18 @@
 # Threading Model — two-tier reactor + three-tier memory
 
+> **2026-05-19 evening pivot — partially superseded.** The "two-tier
+> reactor" framing here (separate network thread pool ~2–4 + content
+> thread pool ~16–32) was replaced: content threads own `io_uring`
+> directly (per-channel reactor, one ring per channel), and a single
+> accept thread handles new connections without owning a ring. The
+> three-tier memory framing also gave way to SoA + linear `mmap` ring
+> storage with session-as-handle. What is UNCHANGED: single-thread
+> content layer, never-block-on-cross-thread-locks principle,
+> per-session SPSC ring primitive, `LNX_CHECK` / `tl::expected` error
+> model. See `docs/discussions/2026-05-19-chat-server-data-layout.md`
+> and the `project-chat-server-v1` memory entry for the current
+> shape.
+
 ## Purpose
 
 Formalize the project-wide threading rules that the foundational primitives

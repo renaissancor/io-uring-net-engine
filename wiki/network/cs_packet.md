@@ -1,5 +1,17 @@
 # cs_packet — typed reader for incoming packets
 
+> **2026-05-19 evening pivot — partially superseded.** This spec
+> describes `cs_packet` as a packet_pool-allocated slot whose body
+> bytes are drained from the recv ring. Current state: `cs_packet` is
+> a VIEW (`frame_view`) — a pointer + length into recv_ring bytes (or
+> into a channel-local stitch buffer when the frame straddles the ring
+> wrap). No per-frame pool allocation, no body memcpy on the happy
+> path. The typed read API (`read<T>`, `read_string`, `read_bytes`)
+> and lifetime contract (valid for one dispatch call) are UNCHANGED;
+> only the underlying storage model changes. See
+> `docs/discussions/2026-05-19-chat-server-data-layout.md` and the
+> `project-chat-server-v1` memory entry for the current shape.
+
 ## Purpose
 
 `cs_packet` (client → server packet) is the **typed reader** the content

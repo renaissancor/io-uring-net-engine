@@ -1,5 +1,18 @@
 # packet_pool — pre-allocated cs_packet / sc_packet per content thread
 
+> **2026-05-19 evening pivot — partially superseded.** This spec's
+> framing as "Tier 3 of three memory tiers" predates the SoA pivot;
+> the three-tier framing has been replaced by SoA + linear `mmap`
+> ring storage with session-as-handle. `cs_packet` no longer needs a
+> pool allocation (it's a zero-copy `frame_view` into the recv ring);
+> `sc_packet`'s use of this pool is also being reconsidered (direct
+> staging into a per-channel scratch or send_ring write region is on
+> the table). The bucket-sized free-list pattern in this spec stays
+> valuable wherever a content-thread-local packet-shaped object is
+> needed, but is no longer mandatory on the hot inbound/outbound
+> paths. See `docs/discussions/2026-05-19-chat-server-data-layout.md`
+> and the `project-chat-server-v1` memory entry for the current shape.
+
 ## Purpose
 
 The packet pool holds **transient packet objects** — `cs_packet` (client→

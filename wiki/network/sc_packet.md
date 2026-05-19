@@ -1,5 +1,17 @@
 # sc_packet — typed writer for outgoing packets
 
+> **2026-05-19 evening pivot — partially superseded.** This spec
+> describes `sc_packet` as a packet_pool-allocated staging buffer that
+> is memcpy'd into the send_ring at finalize time. Current direction:
+> the outgoing path may write directly into a per-channel staging
+> scratch (or directly into the send_ring's contiguous write region)
+> and skip the staging-to-ring memcpy. The typed write API (`init`,
+> `write<T>`, `write_string`, `finalize`), wire format, and
+> content-thread-local lifetime are UNCHANGED. The packet_pool
+> allocation step is being reconsidered. See
+> `docs/discussions/2026-05-19-chat-server-data-layout.md` and the
+> `project-chat-server-v1` memory entry for the current shape.
+
 ## Purpose
 
 `sc_packet` (server → client packet) is the **typed writer** the content

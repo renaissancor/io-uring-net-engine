@@ -266,18 +266,48 @@ never `tl::expected` or `std::expected` directly.
   so a future migration to `std::expected` / `std::print` is a typedef
   swap.
 
-Prefer `std::` over project-rolled where semantics match. The wrapper
-pattern exists where the platform primitive (spin count, fixed
-cache-line alignment, future `futex` use) is exposed deliberately, not
-because `std::` is wrong.
+## `std::` namespace policy
 
-| Use `std::` | Wrap or reimplement |
-|---|---|
-| `std::unique_ptr`, `std::shared_ptr` | — |
-| `std::array`, `std::span`, `std::string_view` | — |
-| `std::atomic<T>` (off hot path) | `lnx::atomic32` / `atomic64` / `atomic_ptr` (hot path) |
-| `std::mutex`, `std::shared_mutex` (off hot path) | `lnx::mutex` (`pthread_mutex` adaptive spin), `lnx::shared_mutex` |
-| `std::vector`, `std::unordered_map` (off hot path) | `malloc_vector`, `cstr_hash_map` (hot path or `new`-override-safe) |
+**Goal: nearly not using STL.** The project prefers self-rolled or
+POSIX-direct equivalents wherever it matters. A small set of `std::`
+types is permitted because they're essentially aliases or compile-time
+constructs that don't drag in allocator/exception machinery.
+
+### Permitted `std::` usage
+
+| Category | Examples | Why OK |
+|---|---|---|
+| Type traits | `std::is_trivially_copyable_v`, `std::is_standard_layout_v`, `std::declval`, `std::remove_cv_t` | Compile-time only; zero runtime cost; no allocator |
+| Typedef aliases | `std::size_t`, `std::byte`, `std::uint8_t`, `std::int32_t`, `std::uint64_t`, `std::ptrdiff_t`, `std::nullptr_t` | Aliases for `<cstdint>` / `<cstddef>` types — same machine code |
+| C-library funcs | `std::memcpy`, `std::memset`, `std::memmove`, `std::memcmp`, `std::aligned_alloc`, `std::free` | C ABI; no allocator, no exceptions, no hidden state |
+| View types | `std::span<T>`, `std::string_view` | Pointer + length; no allocation; no exceptions |
+| `<bit>` helpers | `std::countr_zero`, `std::popcount`, `std::bit_cast`, `std::has_single_bit` | Compile to single instructions; no runtime cost |
+
+### Banned `std::` usage
+
+| Category | Banned | Replacement |
+|---|---|---|
+| Owning containers | `std::vector`, `std::string`, `std::array`(*), `std::map`, `std::unordered_map`, `std::list`, `std::deque`, `std::set`, `std::queue` | `sds::malloc_vector`, `sds::cstr_hash_map`, `sds::indexed_heap`, project-rolled. Raw `T arr[N]` + size for fixed-cap collections |
+| Smart pointers | `std::unique_ptr`, `std::shared_ptr`, `std::weak_ptr` | Manual `new`/`delete` with `LNX_CHECK` invariants, or arena-backed allocation. Architecture v1 avoids `shared_ptr` entirely |
+| Callables | `std::function`, `std::bind` | Function pointers, template parameters, or call-site lambdas |
+| Sync primitives | `std::mutex`, `std::shared_mutex`, `std::atomic<T>`, `std::thread`, `std::jthread`, `std::condition_variable`, `std::latch`, `std::barrier` | `lnx::mutex`, `lnx::shared_mutex`, `lnx::atomic_*`, `lnx::thread` (`src/sync/`, `src/runtime/thread.h`) |
+| Error / fatal | `std::abort`, `std::terminate`, `std::system_error`, `std::error_code`, `std::exception`, all of `<stdexcept>` | `LNX_TRAP()` / `LNX_CHECK` for fatals; `tl::expected<T, E>` for recoverable errors. Project bans exceptions. |
+| Streams | `std::cout`, `std::cerr`, `std::cin`, `std::ostream`, `std::ifstream` | `fmt::print` / `fmt::println` for stdout/stderr; raw `read()` / `write()` or `fopen` / `fwrite` for files |
+| Format | `std::format`, `std::print`, `std::println` | `fmt::format` / `fmt::print` / `fmt::println` (`{fmt}` is in the toolchain) |
+
+*`std::array<T, N>` is a borderline case; banned for stylistic consistency
+with the rest of the policy (project prefers raw `T arr[N]` + a
+compile-time `N` constant). Not a hard ban — flag if a reason arises to
+revisit.
+
+**Why this rule.** `std::` containers couple the codebase to libstdc++'s
+allocator/exception model. `std::mutex::lock()` is specified to throw
+`std::system_error` — a `noexcept` wrapper around it is either a lie or
+forced to break its WinAPI-port contract. `std::vector::push_back` can
+throw `std::bad_alloc`. Every owning std:: container internally calls
+`operator new`. None of this is compatible with the project's
+no-exceptions floor. Sync-primitive scope was decided 2026-05-15
+(commit `73098157`); extended project-wide 2026-05-19.
 
 ---
 
