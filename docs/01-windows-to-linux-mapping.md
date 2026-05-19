@@ -197,7 +197,7 @@ See `wiki/sync/lock_free_stack.md` for the full design.
 
 **Userdata convention:** every SQE submitted in this project encodes a tagged
 pointer in `sqe->user_data` whose low bits identify the op type and high
-bits point to the owning coroutine handle (or session, depending on doc).
+bits point to the owning session.
 See `wiki/network/io_uring_reactor.md`.
 
 **Origins:**

@@ -183,7 +183,6 @@ not libstdc++):
 
 ```bash
 cat > /tmp/probe.cpp <<'EOF'
-#include <coroutine>
 #include <ranges>
 #include <thread>
 #include <numeric>

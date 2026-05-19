@@ -11,7 +11,7 @@ rules. Reference document; consult before adding any new file.
 umbrella namespace. This matches the install include path
 (`<prefix>/include/iouring_net/...`), the CMake target alias
 (`iouring_net::iouring_net`), and the consumer-side spelling
-(`iouring_net::session`, `iouring_net::task<T>`, etc.) used
+(`iouring_net::session`, `iouring_net::channel`, etc.) used
 throughout `iouring-net-server`.
 
 Earlier drafts placed bare classes at **global scope** to match the
@@ -85,7 +85,7 @@ namespace iouring_net {
 
 **Public spelling.** External consumers always write
 `iouring_net::session`, `iouring_net::session_handle`,
-`iouring_net::task<T>`, etc. Internal-to-library code may
+`iouring_net::channel`, etc. Internal-to-library code may
 `using namespace iouring_net` in a `.cpp` file for brevity but
 **never** in a header.
 
@@ -253,7 +253,7 @@ never `tl::expected` or `std::expected` directly.
 
 ## C++ standard
 
-- **C++20. Locked.** Coroutines, concepts, ranges, `std::jthread`,
+- **C++20. Locked.** Concepts, ranges, `std::jthread`,
   `std::stop_token`, designated initializers, `<bit>`.
 - **`<format>` is not part of the baseline.** libstdc++-12 (the floor)
   ships an incomplete `std::format`. All formatted output goes through

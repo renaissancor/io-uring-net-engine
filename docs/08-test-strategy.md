@@ -66,7 +66,6 @@ test suite. They run on demand.
 | Deadlock profiler   | injected 2-cycle is detected; absent-cycle case clean              |
 | Leak tracker        | alloc/free balance; report shape                                   |
 | Reactor             | accept, recv (incl. EOF, error), send, close; capability probe     |
-| task<T>             | sync_wait, exception propagation, cancellation                     |
 | Session             | full echo round trip; backpressure; mid-recv disconnect            |
 | Listener / Service  | bind failure, fd leak (over 1k connect/disconnect), shutdown       |
 | Packet framing      | every header value; split-header; malformed; cross-repo parity     |

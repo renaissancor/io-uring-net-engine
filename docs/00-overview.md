@@ -8,7 +8,7 @@ that the rest of the docs assume.
 
 ## Goal in one sentence
 
-A C++20 coroutine-based TCP network library on `io_uring` that preserves the
+A C++20 TCP network library on `io_uring` that preserves the
 engine-primitives lessons from the Windows IOCP reference repos while shedding
 Win32 entirely.
 
@@ -27,7 +27,7 @@ Win32 entirely.
 │   wiki/network/packet_handler.md)                                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Runtime layer                                                       │
-│  Reactor (io_uring) · CoroutineTask · JobQueue · ThreadContext       │
+│  Reactor (io_uring) · JobQueue · ThreadContext                       │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Primitive layer                                                     │
 │  MemoryPool · ObjectPool · RingBuffer · SerialBuffer ·               │
@@ -73,7 +73,6 @@ connects the two projects.
 | Primitive   | `guard_overflow::manager`              | Defer (v2) | `WindowsLibrary/Library/Include/GuardOverflow.h:7` — page-guard allocator; needs `mprotect`-based Linux rewrite |
 | Primitive   | `log::logger`                          | New        | Per-thread queue + async file write; no counterpart in the reference repos checked here |
 | Runtime     | `reactor` (io_uring)                   | New        | Replaces `IocpCore` (declared but not implemented in IOCP_Rookiss) |
-| Runtime     | `task<T>`                              | New        | Standard C++20 coroutine machinery                      |
 | Runtime     | `job_queue`                            | New        | NextProject.md mentions it; no reference implementation in any repo |
 | Runtime     | `thread_context` (TLS)                 | New        | Stubs only in `IOCP_Rookiss/Engine/ThreadManager.cpp:8` |
 | Network     | `service`                              | New        | Concept only — no IOCP-side implementation              |
@@ -110,9 +109,11 @@ This is a design-doc honesty marker, not a problem.
 
 ## Design tenets
 
-1. **Coroutines first.** Every operation that can suspend is a coroutine.
-   No callback chains, no manual continuations. `co_await read(n)` returns
-   bytes or an error; the caller writes straight-line code.
+1. **Single-thread content layer.** Every channel runs one content thread
+   doing I/O submission, framing, dispatch, and state mutation in a
+   sequential tick loop. The content thread never blocks on locks held by
+   other threads. See `wiki/runtime/threading_model.md` and
+   `docs/discussions/2026-05-19-server-architecture.md`.
 
 2. **One reactor per thread, optionally one thread.** v1 ships
    single-threaded. Multi-threaded support is a v2 concern, designed for but
@@ -125,8 +126,7 @@ This is a design-doc honesty marker, not a problem.
    API-identical to a future `std::expected`.
 
 4. **No hidden allocations on the hot path.** All per-connection allocation
-   goes through the memory pool. Coroutine frames are pool-allocated where
-   the language allows; otherwise sized to fit.
+   goes through the memory pool.
 
 5. **Reference-repo line-level traceability.** Every ported subsystem doc
    cites the original `path:line` so a reader can compare directly.
@@ -213,7 +213,7 @@ This is a design-doc honesty marker, not a problem.
 - **Fixed buffer** — a buffer pre-registered with the kernel so the kernel
   references it by index instead of pinning per-op.
 - **Session** — one logical TCP connection; owns recv/send buffers and the
-  coroutine that drives I/O on that connection.
+  framing cursor on that connection.
 - **Service** — a container that owns the reactor and a set of sessions.
 - **Job queue** — a per-entity FIFO of work items that serializes
   modifications to that entity without taking a lock per operation.

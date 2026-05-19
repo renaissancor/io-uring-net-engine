@@ -97,7 +97,6 @@ Layers 1–3 from `00-overview.md` — Primitive, Runtime, Network.
 | `leak_tracker::manager`                        | Primitive  | Diagnostic, generic                           |
 | `log::logger`                                  | Primitive  | Generic async logger                          |
 | `reactor` (io_uring)                           | Runtime    | The io_uring abstraction itself               |
-| `task<T>`, coroutine machinery                 | Runtime    | Language-level, generic                       |
 | `job_queue`, `thread_context`                  | Runtime    | Generic scheduling primitive                  |
 | `service`, `listener`, `session`               | Network    | Generic TCP server building blocks            |
 | `packet_framing` (size/id header parser)       | Network    | The `[uint16 size][uint16 id]` codec — generic. **This is the entire Network-layer surface the library v1 ships for packets.** No dispatcher base class, no codec template, no unhandled-id policy. See [`../wiki/network/packet_handler.md`](../wiki/network/packet_handler.md) for why the dispatcher is product-side. |

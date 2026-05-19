@@ -21,9 +21,8 @@ For the *how* that pairs with this *what*:
 - **Language: C++20. Locked.** No C++23 features in the public
   surface. CMake: `target_compile_features(iouring_net PUBLIC
   cxx_std_20)`.
-- Used from C++20: coroutines (`<coroutine>`), `<concepts>`,
-  `<ranges>`, `std::jthread`, `std::stop_token`, `<bit>`, designated
-  initializers.
+- Used from C++20: `<concepts>`, `<ranges>`, `std::jthread`,
+  `std::stop_token`, `<bit>`, designated initializers.
 - **Formatting and `expected` are not used from libstdc++.** Both
   depend on stdlib versions newer than the gcc-12 floor:
   - `<format>` is incomplete in libstdc++-12 (compile-time string
