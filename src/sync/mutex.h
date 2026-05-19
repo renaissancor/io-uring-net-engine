@@ -14,10 +14,10 @@ private:
 
 public:
     inline mutex() noexcept {
-        LNX_DCHECK(pthread_mutex_init(&_mtx, nullptr) == 0);
+        LNX_CHECK(pthread_mutex_init(&_mtx, nullptr) == 0);
     }
     inline ~mutex() noexcept {
-        LNX_DCHECK(pthread_mutex_destroy(&_mtx) == 0);
+        LNX_CHECK(pthread_mutex_destroy(&_mtx) == 0);
     }
 
     mutex(const mutex&)            = delete;
@@ -26,15 +26,15 @@ public:
     mutex& operator=(mutex&&)      = delete;
 
     inline void lock() noexcept {
-        LNX_DCHECK(pthread_mutex_lock(&_mtx) == 0);
+        LNX_CHECK(pthread_mutex_lock(&_mtx) == 0);
     }
     inline bool try_lock() noexcept {
         int rc = pthread_mutex_trylock(&_mtx);
-        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        LNX_CHECK(rc == 0 || rc == EBUSY);
         return rc == 0;
     }
     inline void unlock() noexcept {
-        LNX_DCHECK(pthread_mutex_unlock(&_mtx) == 0);
+        LNX_CHECK(pthread_mutex_unlock(&_mtx) == 0);
     }
 };
 
@@ -44,10 +44,10 @@ private:
 
 public:
     inline shared_mutex() noexcept {
-        LNX_DCHECK(pthread_rwlock_init(&_mtx, nullptr) == 0);
+        LNX_CHECK(pthread_rwlock_init(&_mtx, nullptr) == 0);
     }
     inline ~shared_mutex() noexcept {
-        LNX_DCHECK(pthread_rwlock_destroy(&_mtx) == 0);
+        LNX_CHECK(pthread_rwlock_destroy(&_mtx) == 0);
     }
 
     shared_mutex(const shared_mutex&)            = delete;
@@ -56,27 +56,27 @@ public:
     shared_mutex& operator=(shared_mutex&&)      = delete;
 
     inline void lock_exclusive() noexcept {
-        LNX_DCHECK(pthread_rwlock_wrlock(&_mtx) == 0);
+        LNX_CHECK(pthread_rwlock_wrlock(&_mtx) == 0);
     }
     inline bool try_lock_exclusive() noexcept {
         int rc = pthread_rwlock_trywrlock(&_mtx);
-        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        LNX_CHECK(rc == 0 || rc == EBUSY);
         return rc == 0;
     }
     inline void unlock_exclusive() noexcept {
-        LNX_DCHECK(pthread_rwlock_unlock(&_mtx) == 0);
+        LNX_CHECK(pthread_rwlock_unlock(&_mtx) == 0);
     }
 
     inline void lock_shared() noexcept {
-        LNX_DCHECK(pthread_rwlock_rdlock(&_mtx) == 0);
+        LNX_CHECK(pthread_rwlock_rdlock(&_mtx) == 0);
     }
     inline bool try_lock_shared() noexcept {
         int rc = pthread_rwlock_tryrdlock(&_mtx);
-        LNX_DCHECK(rc == 0 || rc == EBUSY);
+        LNX_CHECK(rc == 0 || rc == EBUSY);
         return rc == 0;
     }
     inline void unlock_shared() noexcept {
-        LNX_DCHECK(pthread_rwlock_unlock(&_mtx) == 0);
+        LNX_CHECK(pthread_rwlock_unlock(&_mtx) == 0);
     }
 };
 
