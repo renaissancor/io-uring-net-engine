@@ -1,5 +1,7 @@
 # Portfolio Strategy Discussion — 2026-05-19
 
+> **Superseded by 2026-05-21 scope decision:** This repo (`iouring-net-lib`) now ships **chat server only** as its complete portfolio deliverable. Layer 3 (MMORTS / primitive MMO / renderer thread) has moved to a **separate future repository** (name TBD). The three-layer plan below is preserved as historical context — it explains the decision lineage, but the v1 ship plan is chat-only. See `.omc/wiki/chat-server-v1-session-and-auth-design.md` and `project-portfolio-scope` memory for the current scope.
+
 Companion record to `2026-05-19-server-architecture.md`. Captures the portfolio
 positioning, the three-layer plan, the genre decision for the portfolio game,
 and the reasoning behind each step.
