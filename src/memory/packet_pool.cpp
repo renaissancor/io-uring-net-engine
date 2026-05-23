@@ -5,6 +5,10 @@
 #include <fmt/core.h>
 
 #include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#include <cstdio>
 
 namespace mem {
 
@@ -104,13 +108,26 @@ const packet_pool::bucket& packet_pool::bucket_for(usize size) const noexcept {
 void* packet_pool::acquire(usize size) noexcept {
     bucket& b = bucket_for(size);
 
+    if (!_prewarmed) {
+        fmt::print(stderr,
+                   "fatal: packet_pool::acquire() called before prewarm()\n"
+                   "  thread_id      = {}\n"
+                   "  requested_size = {} B\n",
+                   static_cast<long>(::syscall(SYS_gettid)), size);
+        ::fflush(stderr);
+        LNX_CHECK(_prewarmed);
+    }
+
     if (b.free_list == nullptr) {
         fmt::print(stderr,
                    "fatal: packet_pool bucket exhausted\n"
+                   "  thread_id      = {}\n"
                    "  bucket_size    = {} B\n"
                    "  prewarm_count  = {}\n"
                    "  current_in_use = {}\n",
+                   static_cast<long>(::syscall(SYS_gettid)),
                    b.block_size, b.capacity, b.in_use);
+        ::fflush(stderr);
         LNX_CHECK(b.free_list != nullptr);
     }
 

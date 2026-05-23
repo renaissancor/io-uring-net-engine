@@ -80,7 +80,14 @@ The wiki explicitly accepts this: *"Cross-thread free silently corrupts both poo
 
 References: `src/memory/packet_pool.cpp:127-132`, wiki: *"alloc-thread == free-thread invariant"*.
 
-## 7. Worker-entry doc/code mismatch (NICE-TO-HAVE / COSMETIC)
+## 7. Worker-entry doc/code mismatch — SUPERSEDED 2026-05-23 (by deletion)
+
+**Resolution:** `worker_entry.h` was deleted alongside `worker_start` (see item 1). The doc/code mismatch is moot because the file no longer exists. When `app::worker::entry_point` lands it will be its own pass with its own doc — not a carryover from the trampoline scaffolding.
+
+---
+
+**Original finding (for context):**
+
 
 `worker_entry.h` doc-comment lists two steps:
 ```

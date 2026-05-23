@@ -188,6 +188,33 @@ TEST_CASE("packet_pool: exhausting a bucket fires LNX_CHECK (fatal trap)",
     REQUIRE((sig == SIGTRAP || sig == SIGILL || sig == SIGABRT));
 }
 
+TEST_CASE("packet_pool: acquire before prewarm fires LNX_CHECK (fatal trap)",
+          "[memory][packet_pool]") {
+    pid_t pid = ::fork();
+    REQUIRE(pid >= 0);
+
+    if (pid == 0) {
+        // Child: silence the expected diagnostic, then try to acquire
+        // without calling prewarm() first. Distinct trap site from the
+        // exhaustion case — we should see "called before prewarm()",
+        // not "bucket exhausted".
+        int devnull = ::open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            ::dup2(devnull, STDERR_FILENO);
+            ::close(devnull);
+        }
+        auto& pool = mem::packet_pool::instance();
+        (void)pool.acquire(64);  // expected: SIGTRAP from LNX_CHECK
+        ::_exit(0);              // unreachable
+    }
+
+    int status = 0;
+    ::waitpid(pid, &status, 0);
+    REQUIRE(WIFSIGNALED(status));
+    int sig = WTERMSIG(status);
+    REQUIRE((sig == SIGTRAP || sig == SIGILL || sig == SIGABRT));
+}
+
 TEST_CASE("packet_pool: thread exit munmaps the region cleanly",
           "[memory][packet_pool]") {
     const usize region_size = expected_region_size();
