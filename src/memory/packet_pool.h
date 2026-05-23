@@ -36,7 +36,7 @@ public:
     static packet_pool& instance() noexcept;
 
     // Populate intrusive free lists for all three buckets from the
-    // arena. Idempotent — safe to call once per worker_entry.
+    // arena. Idempotent — safe to call once per worker thread startup.
     void prewarm() noexcept;
 
     // Hot-path acquire. `size` selects the smallest bucket that fits

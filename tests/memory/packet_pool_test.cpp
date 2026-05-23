@@ -7,7 +7,6 @@
 
 #include "memory/packet_pool.h"
 #include "runtime/thread.h"
-#include "runtime/worker_entry.h"
 #include "types.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -206,7 +205,7 @@ TEST_CASE("packet_pool: thread exit munmaps the region cleanly",
     REQUIRE(after <= before);
 }
 
-TEST_CASE("worker_entry: trampoline prewarms before the worker body runs",
+TEST_CASE("packet_pool: prewarm + acquire works on a freshly spawned thread",
           "[memory][packet_pool][runtime]") {
     struct probe {
         bool   pool_ready = false;
@@ -215,8 +214,7 @@ TEST_CASE("worker_entry: trampoline prewarms before the worker body runs",
     auto body = [](void* arg) -> void* {
         auto* p = static_cast<probe*>(arg);
         auto& pool = mem::packet_pool::instance();
-        // If the trampoline ran prewarm(), acquiring here must succeed
-        // without us calling prewarm() ourselves.
+        pool.prewarm();
         void* block = pool.acquire(64);
         p->pool_ready = (block != nullptr);
         p->in_use_at_entry = pool.in_use(64);
@@ -224,8 +222,7 @@ TEST_CASE("worker_entry: trampoline prewarms before the worker body runs",
     };
 
     probe pr;
-    lnx::worker_start start{ body, &pr };
-    lnx::thread t{lnx::worker_entry, &start};
+    lnx::thread t{body, &pr};
     t.join();
 
     REQUIRE(pr.pool_ready);

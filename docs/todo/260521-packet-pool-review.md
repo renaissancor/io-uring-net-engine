@@ -7,23 +7,22 @@ individually in a later session.
 **Scope of code under review:**
 - `src/memory/packet_pool.h`
 - `src/memory/packet_pool.cpp`
-- `src/runtime/worker_entry.h`
+- ~~`src/runtime/worker_entry.h`~~ (deleted 2026-05-23 — see item 1)
 - `tests/memory/packet_pool_test.cpp`
 
 **Status at review:** ASan+UBSan build green; full suite 79 cases / 29,139 assertions; all 6 new packet_pool cases pass.
 
-## 1. `worker_start` dangling-pointer window (MUST-FIX)
+## 1. `worker_start` dangling-pointer window — RESOLVED 2026-05-23 (by deletion)
 
-`lnx::thread` passes the caller's raw `arg` straight to `pthread_create`. `worker_entry()` dereferences `worker_start*` after running `prewarm()`. Caller must keep `worker_start` alive until the trampoline reads it. The test passes only because `start` outlives `t.join()`.
+**Resolution:** `worker_start` POD and `worker_entry` trampoline were deleted entirely. The generic-trampoline pattern was YAGNI scaffolding ahead of `app::worker`; it added a lifetime contract (the dangling-pointer footgun) and baked in an incorrect "always prewarm packet_pool" assumption (would be wrong for `db_thread`, which doesn't allocate packets). When `app::worker` lands, it will own a private `static void* entry_point(void*)` that takes `this` as the arg — no transient struct, no lifetime question. Per-class entry points let each class declare its own setup needs.
 
-Risk: future caller writes `lnx::thread t{worker_entry, &local};` then returns from the enclosing scope before join — UB.
+The packet_pool test that previously exercised the trampoline was rewritten to call `prewarm()` inline from a captureless lambda passed directly to `lnx::thread` — covers the same TLS-singleton-on-a-spawned-thread surface area without the trampoline machinery.
 
-**Open questions to discuss:**
-- Cheap fix (copy `worker_start` to local on first line of trampoline) vs. owning fix (`lnx::spawn_worker(fn, arg)` helper that mallocs/owns/frees the start record).
-- Should the worker-spawning helper live in `runtime/worker_entry.h` or as a new `lnx::thread` constructor overload?
-- Where does the "no STL" rule sit on a hand-rolled owning launcher? (malloc/free is C, fine.)
+---
 
-References: `src/runtime/worker_entry.h:25`, `src/runtime/worker_entry.h:28`, `src/runtime/thread.h:24-25`, `tests/memory/packet_pool_test.cpp:227-229`.
+**Original finding (for context):**
+
+`lnx::thread` passes the caller's raw `arg` straight to `pthread_create`. `worker_entry()` dereferences `worker_start*` after running `prewarm()`. Caller had to keep `worker_start` alive until the trampoline read it. The test passed only because `start` outlived `t.join()`. Future caller writing `lnx::thread t{worker_entry, &local};` and returning from the enclosing scope before join → UB.
 
 ## 2. `fflush(stderr)` before `LNX_CHECK` on exhaustion (SHOULD-FIX)
 

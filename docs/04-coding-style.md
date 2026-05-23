@@ -7,99 +7,142 @@ rules. Reference document; consult before adding any new file.
 
 ## Namespace
 
-**All public library types live under `iouring_net::`** as the
-umbrella namespace. This matches the install include path
-(`<prefix>/include/iouring_net/...`), the CMake target alias
-(`iouring_net::iouring_net`), and the consumer-side spelling
-(`iouring_net::session`, `iouring_net::channel`, etc.) used
-throughout `iouring-net-server`.
-
-Earlier drafts placed bare classes at **global scope** to match the
-WindowsLibrary convention (`RingBuffer` not `Win::RingBuffer`). That
-convention works for monolithic projects but conflicts with the
-`find_package` contract for a library consumed across repository
-boundaries; the change to `iouring_net::` as the umbrella is
-deliberate and resolves the namespace contract drift surfaced in
-the architectural review.
-
-Within `iouring_net::`, **sub-namespaces are reserved for genuine
-taxonomies**, not for grouping files in the same `src/` folder:
+**Top-level namespaces are flat — there is no umbrella namespace.**
+Symbols are grouped by *role*, not by project name. The Linux-side
+layering is four primary tiers plus a set of diagnostic subsystems,
+all top-level peers:
 
 ```cpp
-namespace iouring_net {
+namespace lnx { ... }    // OS primitives
+namespace sds { ... }    // Generic data structures (independent personal library)
+namespace mem { ... }    // Memory pools
+namespace app { ... }    // Domain / runtime — workers, supervisors, sessions
 
-  // Raw POSIX/Linux API wrappers (the Linux equivalent of std::).
-  // Brand for code that directly touches pthread_mutex_t, __atomic_*,
-  // eventfd, io_uring_*, etc.
-  namespace lnx {
-      class mutex, shared_mutex;
-      class atomic32, atomic64, atomic_ptr;
-      class lock_guard, unique_lock, shared_lock_guard, exclusive_lock_guard;
-      // future: file, socket, eventfd, timerfd, signalfd, pipe,
-      //         clock, mmap_region, ...
-  }
-
-  // Generic data structures — the "sds" personal-library brand.
-  // Independent of iouring_net domain concepts.
-  namespace sds {
-      class ring_buffer;
-      template<typename V> class cstr_hash_map;
-      template<typename T> class indexed_heap;
-      template<typename T> class malloc_vector;
-      class serial_buffer;
-  }
-
-  // Diagnostic subsystems with a manager singleton plus helpers.
-  // Matches WindowsLibrary's NewTracer::, GuardOverflow::, Profiler::
-  // pattern, nested one level deeper under iouring_net::.
-  namespace leak_tracker      { struct info; class manager;
-                                /* operator new / delete overrides */ }
-  namespace profiler          { enum class time_unit; struct record;
-                                struct summary_data; class manager; class scope; }
-  namespace deadlock_profiler { class manager; }
-  namespace guard_overflow    { class manager; /* alloc, free free functions */ }
-  namespace log               { enum class level; class logger; }
-
-  // Direct members of iouring_net::  — primitives, runtime, network
-  // surface. No sub-namespace needed; these ARE iouring_net.
-  class memory_pool;
-  template<typename T> class object_pool;
-  template<typename T> class lock_free_stack;
-
-  template<typename T> class task;
-  class reactor;
-  class job_queue;
-  class thread_context;
-
-  class listener;
-  class service;
-  class session;
-  class session_handle;
-  class packet_framing;
-  struct frame_view;
-  enum class close_reason;
-  // packet_handler: deferred — dispatcher lives in iouring-net-server
-
-} // namespace iouring_net
+// Diagnostic subsystems (each groups a manager singleton with helper types):
+namespace profiler          { ... }
+namespace leak_tracker      { ... }
+namespace deadlock_profiler { ... }
+namespace guard_overflow    { ... }
+namespace log               { ... }
 ```
 
-**Public spelling.** External consumers always write
-`iouring_net::session`, `iouring_net::session_handle`,
-`iouring_net::channel`, etc. Internal-to-library code may
-`using namespace iouring_net` in a `.cpp` file for brevity but
-**never** in a header.
+There is no `iouring_net::` umbrella (rejected 2026-05-23 — short call
+sites, no ceremony, survives portfolio expansion to MMO + renderer).
+Consumers write `app::session`, `lnx::mutex`, `sds::ring_buffer`,
+`mem::packet_pool` directly.
 
-**Why `lnx::` is narrow.** `lnx::` brands code that *directly wraps* raw
-POSIX or Linux-specific APIs (`pthread_mutex_t`, `__atomic_*`, `eventfd`,
-`io_uring_*`). Abstract code that only *uses* `lnx::` types internally
-stays at global scope (or in its own per-subsystem namespace if it groups
-multiple types). This mirrors the WindowsLibrary precedent: `Win::` held
-`Atomic32` / `Mutex`; `RingBuffer` and `cstr_hash_map` were global.
+### `lnx::` — OS primitives
 
-**Folder is independent of namespace.** `src/sync/` houses both
-`lnx::mutex` (raw API) and global `lock_free_stack` (abstract data
-structure built on `lnx::atomic*`). Folders organize *function*;
-namespaces organize *API tier*. They are intentionally orthogonal.
+Brand for code that directly wraps Linux/POSIX APIs (`pthread_*`,
+`__atomic_*`, `eventfd`, `io_uring_*`, `clock_gettime`, etc.).
+
+```cpp
+namespace lnx {
+    class mutex, shared_mutex;
+    class atomic32, atomic64, atomic_ptr;
+    class lock_guard, unique_lock, shared_lock_guard, exclusive_lock_guard;
+    class thread;
+    template <typename T, std::size_t N> class spsc_queue;
+    // future: file, socket, eventfd, timerfd, signalfd, pipe,
+    //         clock, mmap_region, ...
+}
+```
+
+### `sds::` — Specialized Data Structures
+
+Generic data structures, treated as an independent personal library.
+No coupling to io_uring, networking, or any domain concept.
+
+```cpp
+namespace sds {
+    class ring_buffer;
+    template<typename V> class cstr_hash_map;
+    template<typename T> class indexed_heap;
+    template<typename T> class malloc_vector;
+    class serial_buffer;
+}
+```
+
+### `mem::` — Memory pools
+
+Allocator and pool subsystems.
+
+```cpp
+namespace mem {
+    class packet_pool;                           // TLS singleton, mmap-backed
+    // future: template<typename T> class object_pool;
+}
+```
+
+### `app::` — Domain / runtime
+
+Application-level types: workers, supervisors, sessions, rooms,
+packets, message types, supervisor orchestration. Survives portfolio
+expansion (chat → MMO → renderer).
+
+```cpp
+namespace app {
+    class supervisor;
+    class worker;
+    class session;
+    class session_handle;
+    struct packet_header;
+    struct frame_view;
+    enum class close_reason;
+    // ... domain types
+}
+```
+
+### Top-level diagnostic subsystems
+
+All diagnostic subsystems sit at top level (peers of `lnx::`, `sds::`,
+`mem::`, `app::`), each grouped around a `manager` singleton plus
+helper types:
+
+```cpp
+namespace profiler          { enum class time_unit; struct record;
+                              struct summary_data; class manager; class scope; }
+namespace leak_tracker      { struct info; class manager;
+                              /* operator new / delete overrides */ }
+namespace deadlock_profiler { class manager; }
+namespace guard_overflow    { class manager; /* alloc / free helpers */ }
+namespace log               { enum class level; class logger; }
+```
+
+Folder layout (`src/diagnostic/`) groups them on disk; the namespace
+tree doesn't need to. Whether to introduce a `diag::` parent for the
+diagnostic family is deferred — revisit when the full diagnostic set
+is in view.
+
+### Sub-namespaces — when to nest
+
+Nest only for **genuine taxonomy**, not "files in the same folder."
+No subsystems are nested today. The bar is high — prefer a top-level
+namespace over nesting unless the nested subsystem is tightly coupled
+to its parent.
+
+### Internal vs public spelling
+
+External consumers always write the fully qualified name:
+`app::session`, `lnx::mutex`, `sds::ring_buffer`, `mem::packet_pool`.
+Internal-to-library code may `using namespace app;` (etc.) in a
+`.cpp` file for brevity but **never** in a header.
+
+### Folder is independent of namespace
+
+`src/sync/` houses both `lnx::mutex` (raw API) and `lnx::atomic*`
+(both wrap POSIX/builtin primitives). `src/diagnostic/` houses
+multiple top-level diagnostic namespaces (`profiler::`,
+`leak_tracker::`, `log::`, etc.). Folders organize *function*;
+namespaces organize *API tier and contract*. They are intentionally
+orthogonal.
+
+### CMake target name
+
+The CMake export target remains `iouring_net::iouring_net` (matches
+the repo name `iouring-net-lib`). This is independent of the C++
+namespace tree — CMake target naming and C++ namespacing don't have
+to match. cf. Boost (`Boost::boost` CMake → `boost::` C++).
 
 ---
 
@@ -113,7 +156,7 @@ namespaces organize *API tier*. They are intentionally orthogonal.
 | Public member | `snake_case` | `count`, `next` |
 | Local variable | `snake_case` | `bytes_read`, `new_capacity` |
 | `static constexpr` constant | `SCREAMING_SNAKE_CASE` | `MAX_SEGMENT_SIZE`, `BUFFER_CAPACITY` |
-| Namespace | `lowercase` | `lnx`, `leak_tracker`, `profiler` |
+| Namespace | `lowercase` | `lnx`, `app`, `sds`, `mem`, `leak_tracker` |
 | Template parameter | `PascalCase`, single letter when generic | `T`, `V`, `Promise`, `Args...` |
 | Enum class value | `snake_case` | `time_unit::nanosec` |
 | File name | `snake_case.h` / `.cpp` | `ring_buffer.h`, `memory_pool.cpp` |
@@ -230,7 +273,8 @@ never `tl::expected` or `std::expected` directly.
 
 **Allocation**
 - No hidden allocations on the hot path. Per-connection state goes
-  through `memory_pool` (global namespace).
+  through `mem::` pools (`mem::packet_pool` today; future
+  `mem::object_pool`).
 - `new` / `delete` are intercepted by `leak_tracker::manager` in debug
   builds. The tracker's storage uses `malloc_vector` to avoid recursive
   allocation. Code reachable from `operator new` MUST NOT itself call
@@ -326,11 +370,12 @@ no-exceptions floor. Sync-primitive scope was decided 2026-05-15
 
 ## Review checklist (before merging a new file)
 
-- [ ] Symbols placed per namespace tier — `lnx::` for raw POSIX/Linux
-      API wrappers, global for pure data + compound primitives +
-      single-class subsystems, per-subsystem namespace
-      (`leak_tracker::`, `profiler::`, `log::`, etc.) for diagnostics
-      that group a `manager` plus helper types
+- [ ] Symbols placed per namespace tier — `lnx::` for OS primitive
+      wrappers; `sds::` for generic data structures; `mem::` for memory
+      pools; `app::` for domain/runtime (worker, supervisor, session,
+      etc.); top-level `profiler::`, `leak_tracker::`, `log::`,
+      `deadlock_profiler::`, `guard_overflow::` for diagnostic
+      subsystems
 - [ ] Class, method, member names are `snake_case` (members `_snake_case`)
 - [ ] `static constexpr` constants are `SCREAMING_SNAKE_CASE`
 - [ ] Hot-path methods are `noexcept`
