@@ -109,11 +109,14 @@ This is a design-doc honesty marker, not a problem.
 
 ## Design tenets
 
-1. **Single-thread content layer.** Every channel runs one content thread
-   doing I/O submission, framing, dispatch, and state mutation in a
-   sequential tick loop. The content thread never blocks on locks held by
-   other threads. See `wiki/runtime/threading_model.md` and
-   `docs/discussions/2026-05-19-server-architecture.md`.
+1. **Single-thread data plane per worker (fused per-worker io_uring).** Each
+   worker thread owns one io_uring ring and runs I/O submission, completion,
+   framing, dispatch, and state mutation in a sequential tick loop. The
+   worker never blocks except on `io_uring_submit_and_wait`. v1 ships
+   `N_workers = 1`; the same shape scales to N>1 unchanged. See
+   `.omc/wiki/threading-model-per-worker-io-uring-copy-via-inbox.md`,
+   `.omc/wiki/worker-class-and-thread-roles.md`, and
+   `docs/discussions/2026-05-19-server-architecture.md` (historical, pre-pivot).
 
 2. **One reactor per thread, optionally one thread.** v1 ships
    single-threaded. Multi-threaded support is a v2 concern, designed for but
