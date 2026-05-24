@@ -42,7 +42,6 @@ namespace lnx {
     class atomic32, atomic64, atomic_ptr;
     class lock_guard, unique_lock, shared_lock_guard, exclusive_lock_guard;
     class thread;
-    template <typename T, std::size_t N> class spsc_queue;
     // future: file, socket, eventfd, timerfd, signalfd, pipe,
     //         clock, mmap_region, ...
 }
@@ -59,6 +58,7 @@ namespace sds {
     template<typename V> class cstr_hash_map;
     template<typename T> class indexed_heap;
     template<typename T> class malloc_vector;
+    template <typename T, std::size_t N> class spsc_queue;  // concurrent SPSC FIFO; uses lnx::atomic
     class serial_buffer;
 }
 ```
