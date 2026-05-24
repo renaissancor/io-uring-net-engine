@@ -10,6 +10,7 @@ add_executable(iouring_net-test
   smoke_test.cpp
   diagnostic/profiler_scope_test.cpp
   memory/packet_pool_test.cpp
+  net/echo_smoke_test.cpp
   runtime/thread_test.cpp
   sds/cstr_hash_map_test.cpp
   sds/malloc_vector_test.cpp
