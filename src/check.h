@@ -12,6 +12,14 @@
 //     expression is always evaluated, so wrapping side-effecting calls
 //     (e.g. pthread_*) is safe:
 //         LNX_CHECK(pthread_mutex_lock(&m) == 0);
+//
+// The trapping branch is hinted unreachable so the optimizer propagates
+// the postcondition (`cond` is true) into subsequent flow analysis —
+// this silences -Wnull-dereference / -Wuninitialized warnings on code
+// that relies on the check for non-null / initialized guarantees.
+// A developer who resumes past the trap in gdb has explicitly broken
+// the invariant; UB follow-on is consistent with the "fatal in
+// production" half of the contract.
 
 // LNX_TRAP() — arch-aware software breakpoint.
 // - Clang: __builtin_debugtrap() emits the right instruction per target.
@@ -29,4 +37,10 @@
     #define LNX_TRAP() __builtin_trap()
 #endif
 
-#define LNX_CHECK(cond)  do { if (!(cond)) LNX_TRAP(); } while (0)
+#define LNX_CHECK(cond)                                                        \
+    do {                                                                       \
+        if (!(cond)) {                                                         \
+            LNX_TRAP();                                                        \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+    } while (0)
