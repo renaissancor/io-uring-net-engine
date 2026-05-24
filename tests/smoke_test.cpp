@@ -59,15 +59,15 @@ TEST_CASE("project expected alias", "[smoke][expected]") {
 TEST_CASE("project scalar type aliases", "[smoke][types]") {
     REQUIRE(sizeof(byte) == 1);
 
-    REQUIRE(sizeof(int8) == 1);
-    REQUIRE(sizeof(int16) == 2);
-    REQUIRE(sizeof(int32) == 4);
-    REQUIRE(sizeof(int64) == 8);
+    REQUIRE(sizeof(i08) == 1);
+    REQUIRE(sizeof(i16) == 2);
+    REQUIRE(sizeof(i32) == 4);
+    REQUIRE(sizeof(i64) == 8);
 
-    REQUIRE(sizeof(uint8) == 1);
-    REQUIRE(sizeof(uint16) == 2);
-    REQUIRE(sizeof(uint32) == 4);
-    REQUIRE(sizeof(uint64) == 8);
+    REQUIRE(sizeof(u08) == 1);
+    REQUIRE(sizeof(u16) == 2);
+    REQUIRE(sizeof(u32) == 4);
+    REQUIRE(sizeof(u64) == 8);
 
     REQUIRE(sizeof(uptr) == sizeof(void*));
     REQUIRE(sizeof(iptr) == sizeof(void*));
