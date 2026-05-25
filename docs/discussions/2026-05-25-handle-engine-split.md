@@ -216,3 +216,89 @@ Final doc: 337 lines, 13 sections. Status accurately reflects "engine constructi
 The codex review was the highest-leverage moment of the session. It caught one real correctness bug (the false TLS-null claim) and four documentation gaps that would have tripped up an implementer reading the doc cold. ROI: ~2 minutes of agent delegation, ~10 minutes of fixes, saved an unknown amount of confused-future-self time. Pattern worth repeating before any foundation doc lands.
 
 The codex agent is resumable (`a69d3ee50389052dc`) if a follow-up review pass on the revised doc is wanted later.
+
+---
+
+# Evening addendum — implementation, latent bug, wiki revision pass (2026-05-25)
+
+## What landed in code
+
+Commit `bbe6851` ships the foundation skeleton from the morning's design:
+
+- `src/app/config.h` — placeholder POD
+- `src/app/detail/thread_role.{h,cpp}` — shared `tls_role` enum (Decision 2 → **Option A**, the deferred sub-decision resolved at implementation time)
+- `src/app/handle_thread.{h,cpp}` — universal per-thread metadata, lifecycle observers, `request_stop()` / `join()`
+- `src/app/handle_worker.{h,cpp}` — composes `handle_thread`, trampoline (role-token install → setname → kernel_tid publish → packet_pool prewarm → engine instance → `attach()` → CAS-promote → `run_loop`)
+- `src/app/engine_worker.{h,cpp}` — TLS Meyers singleton, `attach()` + `run_loop()` with three `LNX_CHECK` guards
+- `tests/app/handle_worker_skeleton_test.cpp` — full lifecycle + idempotence tests
+
+89/89 tests, 1.03M assertions, clean under ASan+UBSan and TSan (via `setarch -R` per `docs/06-system-setup.md`).
+
+## The race that wasn't in the design
+
+The first test run hung. Cause: unconditional `_state.store_release(running)` at the end of the trampoline can clobber a concurrent `request_stop()`'s `draining` write — worker spins forever with no observation of the stop request.
+
+Fix landed in `bbe6851`: introduced a 4th state value `starting` (ctor default), and the trampoline CAS-promotes `starting → running`. CAS-loss path (observed == `draining`) means supervisor requested stop during preamble → short-circuit to `stopped` without entering `run_loop`. The runtime three-state contract (`running → draining → stopped`) from the worker-lifecycle wiki is preserved; `starting` is a pre-running sentinel with no runtime semantics.
+
+The wiki review (next section) found a deeper bug here that the skeleton tests dodged by accident.
+
+## Wiki review pass — three codex agents in parallel
+
+Three `codex:codex-rescue` agents dispatched in parallel against the three wiki pages most affected by the day's work. Verdicts:
+
+| Page | Verdict | Key findings |
+|---|---|---|
+| `handle-engine-split-pattern.md` | needs revision before promotion | Status still "Draft"; Decision 2 still marked deferred; trampoline still shows TBD role-token install; struct sketch still 3-state |
+| `worker-lifecycle-three-state-protocol.md` | sentinel framing recommended (not rename) | Page is "Three-State Protocol"; needs 4-state acknowledgment; transition table missing 2 rows; enum example outdated; **flagged `request_stop` doesn't handle `starting → draining`** |
+| `worker-class-and-thread-roles.md` | Option B (prune + banner) | 8 obsolete line ranges identified; universal-pattern + atomic discipline + identity rationale parts still load-bearing and should be preserved |
+
+The middle one was the highest-impact catch: the `starting → draining` gap in `request_stop()` is a real latent bug. The skeleton tests dodged it because they always `spin_until_running` before `request_stop`, but external callers had no such guarantee — a `request_stop()` call landing during trampoline preamble would silently drop. Commit `a2de49e` fixed it with TDD:
+
+1. Added a failing test that calls `request_stop()` on a fresh handle (state == `starting`) and asserts `is_draining()`. Pre-fix it failed at the assertion as expected.
+2. Replaced the single CAS with a CAS-loop accepting both `starting` and `running` as legitimate pre-stop states.
+3. Re-ran: 90/90 tests pass, clean under ASan+UBSan+TSan.
+
+## Wiki revisions applied (local-only — `.omc/` is gitignored)
+
+`handle-engine-split-pattern.md` (337 → 393 lines):
+- Status promoted from "Draft (foundation)" → "Locked (foundation implemented `bbe6851` + `a2de49e`)"
+- `handle_thread` struct sketch updated: state enum now 4-state, `_state` ctor default = `starting`
+- Lifecycle API description updated: `request_stop()` is a CAS-loop accepting `starting` or `running`
+- Trampoline section rewrote the code block: role-token install as step 1, CAS-promote with explicit branch on CAS-loss
+- Decision 3 section retitled "Role-token guard mechanism — Option A (shared `tls_role` enum)" with concrete code from `src/app/`
+- Documentation roadmap table now shows ✅ for the foundation and ⬜ for per-class detail pages
+- Added "Still-deferred design topics" subsection enumerating init failure / shutdown ordering / boot wiring
+
+`worker-lifecycle-three-state-protocol.md` (228 → 270 lines):
+- Title kept as "Three-State" — sentinel framing, not promotion
+- Subtitle extended: "Three-State Runtime Contract (+ starting boot sentinel)"
+- Updated date stamped 2026-05-25
+- Cross-link to `[[handle-engine-split-pattern]]` added
+- Transition table extended with `starting → running`, `starting → draining`, `starting → stopped` (short-circuit) rows
+- New "Boot sentinel — why a fourth state value exists" subsection explains the race and the CAS-promote fix
+- API surface pseudocode updated: 4-state enum, `is_starting()` observer, trampoline-based pseudocode with CAS-promote + CAS-loss branch
+- Renamed conceptual class from `worker` to `active_object_handle` with a note that the live code is `handle_thread` / `handle_worker` / `engine_worker`
+
+`worker-class-and-thread-roles.md` (467 → 156 lines, **net -311**):
+- Option B applied: prune obsolete `app::worker` umbrella class material, keep role-agnostic discipline
+- New banner at top marking the page as historical and pointing at `[[handle-engine-split-pattern]]`
+- Kept: three-roles inventory, Pattern A vs Pattern B, portable definition, data-plane diagram, universal active-object patterns (#1–7), `lnx::atomic` vs `std::atomic` discipline, identity rationale (`id` / `name` / `kernel_tid`)
+- Removed: `## The worker class is an active object`, universal anatomy + inbound channels, `worker.h` shape, `worker.cpp` shape, API design rules, "Lifetime: supervisor owns worker objects", "Open items deferred to implementation"
+- Updated cross-references to point at `handle-engine-split-pattern` and the session-account data model
+
+## Status of the deferred topics
+
+Still owed for future sessions (in approximate priority order):
+
+| Topic | Reason it's still owed |
+|---|---|
+| Init failure modes | `mmap` fail, `io_uring_queue_init` fail, `pthread_create` fail, `listen` fail. Need a policy: hard-fail before publishing `running`, or introduce `failed_to_start` lifecycle state. |
+| Shutdown ordering at process exit | Registry singleton dtor vs engine TLS dtors vs `lnx::thread` dtors. Engine dtors must not touch registry queues after the registry singleton is destroyed. |
+| Boot wiring order | Supervisor allocates SPSC storage → creates handles → installs pointers → starts db → starts workers. Race-free sequencing. |
+| `peer_msg` / `aux_msg` tagged union shape | Currently the mesh inbox pointers are absent in the skeleton; types decided when first peer-comms use case lands. |
+
+## Reflection — wiki review value, second pass
+
+The morning's codex review caught documentation gaps (the false TLS-null claim being the biggest). The evening's wiki review pass found a real latent bug in the code (`request_stop` dropping `starting → draining` requests). Both passes were ~2 minutes of agent dispatch and ~10–20 minutes of follow-up work; both paid back many multiples of the investment.
+
+Worth noting: the bug surfaced as a remark inside a documentation-review finding ("the spec does not cover `starting → draining`"), not as a separate code-review finding. Wiki/code consistency review is incidentally a code-correctness review when the code is implementing what the wiki says.
