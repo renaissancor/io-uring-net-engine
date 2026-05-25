@@ -25,6 +25,10 @@ include(compiler-warnings)
 # ---------------------------------------------------------------------------
 add_library(iouring_net STATIC
   src/_placeholder.cpp
+  src/app/detail/thread_role.cpp
+  src/app/engine_worker.cpp
+  src/app/handle_thread.cpp
+  src/app/handle_worker.cpp
   src/diagnostic/profiler_scope.cpp
   src/memory/packet_pool.cpp
   src/sds/ring_buffer.cpp)
