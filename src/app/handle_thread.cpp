@@ -28,12 +28,31 @@ i32 handle_thread::kernel_tid() const noexcept {
 }
 
 void handle_thread::request_stop() noexcept {
-    // CAS running→draining is idempotent: a second call (or one after the
-    // worker already self-transitioned to stopped) fails the CAS and is a
-    // no-op. We deliberately ignore the observed-value return.
-    (void)_state->compare_exchange(
-        static_cast<i32>(state::draining),
-        static_cast<i32>(state::running));
+    // Transitions starting OR running → draining via CAS-loop. Both are
+    // legitimate "pre-stop" states:
+    //   starting → draining   (supervisor asks before worker thread published
+    //                          running; the trampoline observes draining at
+    //                          its CAS-promote step and short-circuits to
+    //                          stopped without entering run_loop)
+    //   running  → draining   (normal-path drain request after worker is
+    //                          live; run_loop observes draining and exits)
+    // Once draining or stopped, subsequent calls are no-ops. This makes
+    // request_stop idempotent AND race-free against the trampoline's
+    // own CAS-promote of starting→running.
+    const i32 starting = static_cast<i32>(state::starting);
+    const i32 running  = static_cast<i32>(state::running);
+    const i32 draining = static_cast<i32>(state::draining);
+
+    i32 observed = _state->load_acquire();
+    while (observed == starting || observed == running) {
+        const i32 actual = _state->compare_exchange(draining, observed);
+        if (actual == observed) {
+            return;   // CAS swapped, draining published
+        }
+        observed = actual;   // retry against the latest value
+    }
+    // observed is draining or stopped — already past the request_stop
+    // window; no-op.
 }
 
 void handle_thread::join() noexcept {

@@ -93,3 +93,32 @@ TEST_CASE("app: handle_worker::request_stop is idempotent",
     w.join();
     SUCCEED();
 }
+
+TEST_CASE("app: request_stop on starting handle transitions to draining; worker short-circuits to stopped",
+          "[app][skeleton][handle_worker]") {
+    // Verifies the latent race surfaced by the wiki review: request_stop()
+    // arriving BEFORE the trampoline CAS-promotes starting→running must
+    // still take effect. The simple CAS(draining, running) silently drops
+    // the request when observed == starting; the worker then never sees
+    // a stop and spins forever. The fix handles starting→draining as a
+    // valid transition.
+    app::config        cfg{};
+    app::handle_worker w{2, cfg};
+
+    REQUIRE(w.is_starting());
+
+    // Before start() — no worker thread exists yet; state is starting.
+    // request_stop() must drive it to draining synchronously.
+    w.request_stop();
+    REQUIRE(w.is_draining());
+
+    // Now start the worker. The trampoline's CAS(running, starting) fails
+    // because state is draining; trampoline observes draining and short-
+    // circuits to stopped without entering run_loop.
+    w.start();
+    spin_until_stopped(w);
+    REQUIRE(w.is_stopped());
+
+    w.join();
+    SUCCEED();
+}
