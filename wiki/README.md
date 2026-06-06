@@ -22,6 +22,7 @@ For cross-cutting topics (build, kernel, CI, coding style), see
 | [`sds/ring_buffer.md`](sds/ring_buffer.md)                          | `src/sds/ring_buffer.{h,cpp}`                                | growable circular byte buffer (v1 landed) |
 | [`sds/cstr_hash_map.md`](sds/cstr_hash_map.md)                      | `src/sds/cstr_hash_map.{h,cpp}`                              | hash map keyed by `.rodata` literals |
 | [`sds/malloc_vector.md`](sds/malloc_vector.md)                      | `src/sds/malloc_vector.h`                                    | malloc/free-backed vector for trivial records |
+| [`sds/static_vector.md`](sds/static_vector.md)                      | `src/sds/static_vector.h`                                    | inline fixed-capacity vector for non-movable, pinned objects |
 | [`sds/serial_buffer.md`](sds/serial_buffer.md)                      | `src/sds/serial_buffer.{h,cpp}`                              | sequential write buffer    |
 | [`memory/memory_pool.md`](memory/memory_pool.md)                    | `src/memory/memory_pool.{h,cpp}`                             | 48-class size-bucket pool  |
 | [`memory/object_pool.md`](memory/object_pool.md)                    | `src/memory/object_pool.{h,cpp}`                             | typed pool over the 48-class allocator |
