@@ -26,7 +26,9 @@ include(compiler-warnings)
 add_library(iouring_net STATIC
   src/_placeholder.cpp
   src/app/detail/thread_role.cpp
+  src/app/engine_acceptor.cpp
   src/app/engine_worker.cpp
+  src/app/handle_acceptor.cpp
   src/app/handle_thread.cpp
   src/app/handle_worker.cpp
   src/diagnostic/profiler_scope.cpp
@@ -68,6 +70,13 @@ target_link_libraries(iouring_net
     tl::expected)
 
 iouring_net_apply_warnings(iouring_net)
+
+# ---------------------------------------------------------------------------
+# Server executable — supervisor / acceptor / worker runtime entry point
+# ---------------------------------------------------------------------------
+add_executable(server src/app/main.cpp)
+target_link_libraries(server PRIVATE iouring_net::iouring_net)
+iouring_net_apply_warnings(server)
 
 # ---------------------------------------------------------------------------
 # Install / export

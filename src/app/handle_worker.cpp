@@ -16,8 +16,11 @@ handle_worker::handle_worker(i32 id, const config& cfg) noexcept
     : base(id, ""),   // base name set below
       _cfg(cfg)
 {
-    // pthread_setname_np cap is 16 bytes incl NUL. "worker_<id>" fits any
-    // id that fits the configured worker ceiling (16-ish in v2).
+    // Single decimal digit (0 .. k_worker_max-1) keeps every name 8 chars
+    // ("worker_0".."worker_7"), matching "acceptor"/"database". The guard
+    // turns an over-large id into a loud trap rather than a silently 9-char
+    // name that breaks column alignment in ps/htop.
+    LNX_CHECK(id >= 0 && id < config::k_worker_max);
     std::snprintf(base._name, sizeof(base._name), "worker_%d", id);
 }
 

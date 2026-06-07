@@ -18,8 +18,9 @@ namespace app::detail {
 enum class thread_role : i32 {
     none       = 0,   // zero-init on every thread that did not go through a trampoline
     worker     = 1,
-    db         = 2,
+    db         = 2,   // deferred out of v1 — see project memory "db thread deferred"
     supervisor = 3,
+    acceptor   = 4,
 };
 
 extern thread_local thread_role tls_role;
