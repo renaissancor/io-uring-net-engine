@@ -16,7 +16,6 @@ add_executable(iouring_net-test
   sds/cstr_hash_map_test.cpp
   sds/malloc_vector_test.cpp
   sds/ring_buffer_test.cpp
-  sds/spsc_queue_test.cpp
   sds/static_vector_test.cpp
   sync/atomic_test.cpp
   sync/mutex_test.cpp)

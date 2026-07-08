@@ -32,8 +32,7 @@ add_library(iouring_net STATIC
   src/app/handle_thread.cpp
   src/app/handle_worker.cpp
   src/diagnostic/profiler_scope.cpp
-  src/memory/packet_pool.cpp
-  src/sds/ring_buffer.cpp)
+  src/memory/packet_pool.cpp)
 add_library(iouring_net::iouring_net ALIAS iouring_net)
 
 target_compile_features(iouring_net PUBLIC cxx_std_20)
