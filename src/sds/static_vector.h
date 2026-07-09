@@ -11,7 +11,7 @@
 // be address-pinned). Overflow / out-of-range access trap via LNX_CHECK:
 // capacity is a contract, not a negotiation.
 //
-// Full design, rationale, and test plan: wiki/sds/static_vector.md
+// Full design, rationale, and test plan: doc/sds/static_vector.md
 
 #include <new>          // placement new
 #include <utility>      // std::forward

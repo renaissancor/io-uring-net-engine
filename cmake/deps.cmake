@@ -5,7 +5,7 @@
 # liburing's autotools build) is the always-present fallback.
 #
 # All git tags are pinned. master/main references are not permitted.
-# See docs/05-cmake.md for the full design rationale.
+# See doc/05-cmake.md for the full design rationale.
 
 include(FetchContent)
 include(ExternalProject)

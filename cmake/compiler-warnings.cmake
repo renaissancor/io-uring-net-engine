@@ -5,7 +5,7 @@
 #
 # Ratcheted in: -Werror, -Wconversion, -Wsign-conversion are off at v0
 # and turned on as the codebase matures. The full list lives in
-# docs/05-cmake.md § "Warning set".
+# doc/05-cmake.md § "Warning set".
 
 function(iouring_net_apply_warnings target)
   if(MSVC)

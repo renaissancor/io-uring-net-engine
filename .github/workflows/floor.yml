@@ -10,7 +10,7 @@ on:
 # dep below floor. Branch protection requires this job to pass.
 # Without it, "works on noble" silently rots into "doesn't work on
 # 22.04" because no one tests the lower bound. See
-# docs/07-ci-and-reproducibility.md § "Load-bearing CI floor job".
+# doc/07-ci-and-reproducibility.md § "Load-bearing CI floor job".
 
 jobs:
   ubuntu-2204-gcc12:

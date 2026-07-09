@@ -4,7 +4,7 @@
 // policy is the recv/send (one-owner) ring; the spsc policy is the cross-thread
 // mesh edge. Deterministic cases run on `single`; the multi-threaded FIFO
 // stress runs on `spsc` (ported from the retired spsc_queue suite) and is
-// TSan-checked via the tsan preset (see docs/08-test-strategy.md).
+// TSan-checked via the tsan preset (see doc/08-test-strategy.md).
 
 #include "sds/ring_buffer.h"
 
