@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(iouring_net
   VERSION   0.0.1
   LANGUAGES CXX
-  DESCRIPTION "Linux-native C++20 coroutine network library on io_uring")
+  DESCRIPTION "Linux-native C++20 realtime interaction network engine on io_uring")
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -31,6 +31,7 @@ add_library(iouring_net STATIC
   src/app/handle_acceptor.cpp
   src/app/handle_thread.cpp
   src/app/handle_worker.cpp
+  src/app/session_table.cpp
   src/diagnostic/profiler_scope.cpp
   src/memory/packet_pool.cpp)
 add_library(iouring_net::iouring_net ALIAS iouring_net)
@@ -85,7 +86,7 @@ iouring_net_apply_warnings(server)
 # file-set above ship to the install prefix; any other header in src/ is
 # automatically private. New public surface is added by amending the
 # FILE_SET FILES list (one line per header), making boundary changes
-# reviewable line-by-line. Referenced by docs/09-project-split.md §
+# reviewable line-by-line. Referenced by doc/09-project-split.md §
 # "The contract surface" and iouring-net-server/docs/07-ci.md §
 # "Boundary enforcement".
 install(TARGETS iouring_net

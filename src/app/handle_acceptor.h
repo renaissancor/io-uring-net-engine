@@ -13,6 +13,7 @@
 
 #include "config.h"
 #include "handle_thread.h"
+#include "spsc_mailbox.h"
 
 namespace app {
 
@@ -27,6 +28,17 @@ struct handle_acceptor {
 
     // Role-specific lifecycle — start() spawns with the acceptor trampoline.
     void start() noexcept;
+
+    // Install the mesh edges the supervisor (LANDLORD) owns. `out` is the
+    // acceptor->worker admission outbox this acceptor posts to; `in` is the
+    // worker->acceptor close-notify inbox it drains. Must be called BEFORE
+    // start(). v1 wires the single worker 0; the multi-worker fan-out (an
+    // array of outboxes) lands when worker_count > 1.
+    void install_mailboxes(acceptor_to_worker_mailbox* out,
+                           worker_to_acceptor_mailbox* in) noexcept {
+        _to_worker   = out;
+        _from_worker = in;
+    }
 
     // Forward generic lifecycle to base.
     void request_stop() noexcept { base.request_stop(); }
@@ -46,8 +58,11 @@ struct handle_acceptor {
     handle_thread base;
     config        _cfg;
 
-    // listen_fd + acceptor->worker handoff inbox pointers land with the
-    // data-path phase.
+    // Mesh edges (supervisor-owned; this handle only borrows). v1 targets the
+    // single worker 0; a per-worker outbox array replaces `_to_worker` when the
+    // pool grows. listen_fd + accept SQEs land with the data-path phase.
+    acceptor_to_worker_mailbox* _to_worker   = nullptr;
+    worker_to_acceptor_mailbox* _from_worker = nullptr;
 
 private:
     static void* entry(void* self) noexcept;   // per-class pthread trampoline

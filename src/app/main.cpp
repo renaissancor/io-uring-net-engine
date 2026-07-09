@@ -20,6 +20,7 @@
 #include "detail/thread_role.h"
 #include "handle_acceptor.h"
 #include "handle_worker.h"
+#include "spsc_mailbox.h"
 
 #include "../check.h"
 #include "../runtime/thread.h"
@@ -73,6 +74,18 @@ int main() {
         workers.emplace_back(i, cfg);
     }
 
+    // (4a) LANDLORD: allocate the acceptor<->worker mesh edges up front and
+    //      install them before any thread starts, so each engine sees non-null
+    //      edges on its first tick. The mailboxes are non-movable (they embed
+    //      byte rings), so they are named locals owned by this stack frame,
+    //      which outlives every thread (all are joined before main returns).
+    //      v1 wires the single worker 0; a per-worker edge array replaces this
+    //      when worker_count > 1.
+    LNX_CHECK(cfg.worker_count == 1);   // mesh fan-out is v1-single-worker only
+    acceptor_to_worker_mailbox to_worker;
+    worker_to_acceptor_mailbox from_worker;
+    workers[0].install_mailboxes(&to_worker, &from_worker);
+
     // (5) Start workers, then BARRIER until every one publishes running.
     for (auto& w : workers) {
         w.start();
@@ -87,6 +100,7 @@ int main() {
     // (6) Workers are live -> start the acceptor. The handoff producer only
     //     comes online after its consumers (workers) are ready.
     handle_acceptor acceptor{cfg};
+    acceptor.install_mailboxes(&to_worker, &from_worker);
     acceptor.start();
     while (!acceptor.is_running()) {
         lnx::this_thread::yield();

@@ -18,6 +18,12 @@ struct config {
 
     // v1 boots a single worker; raise toward k_worker_max to scale the pool.
     i32 worker_count = 1;
+
+    // SessionManager authority-table capacity (compile-time: it backs a fixed
+    // inline session_record array, no heap). This is the correctness-milestone
+    // cap, NOT a final MMO scale number — raise it once worker-side SoA/mmap
+    // session storage lands (see handoff "Preserve: SoA Session Storage").
+    static constexpr usize k_max_sessions = 256;
 };
 
 }  // namespace app

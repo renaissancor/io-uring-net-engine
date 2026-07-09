@@ -13,6 +13,7 @@
 
 #include "config.h"
 #include "handle_thread.h"
+#include "spsc_mailbox.h"
 
 namespace app {
 
@@ -27,6 +28,16 @@ struct handle_worker {
 
     // Role-specific lifecycle — start() spawns with worker trampoline.
     void start() noexcept;
+
+    // Install the mesh edges the supervisor (LANDLORD) owns. `in` is the
+    // acceptor->worker admission inbox this worker drains; `out` is the
+    // worker->acceptor close-notify outbox it posts to. Must be called BEFORE
+    // start() so the engine sees non-null edges on its first tick.
+    void install_mailboxes(acceptor_to_worker_mailbox* in,
+                           worker_to_acceptor_mailbox* out) noexcept {
+        _from_acceptor = in;
+        _to_acceptor   = out;
+    }
 
     // Forward generic lifecycle to base.
     void request_stop() noexcept { base.request_stop(); }
@@ -46,8 +57,11 @@ struct handle_worker {
     handle_thread base;
     config        _cfg;
 
-    // Mesh inbox queue pointers omitted for skeleton; added when peers /
-    // db_thread / supervisor first push messages.
+    // Mesh edges (supervisor-owned; this handle only borrows). The engine
+    // reads them via the handle. Null until install_mailboxes(); the adopt/
+    // drain logic that consumes them lands with worker-side session storage.
+    acceptor_to_worker_mailbox* _from_acceptor = nullptr;
+    worker_to_acceptor_mailbox* _to_acceptor   = nullptr;
 
 private:
     static void* entry(void* self) noexcept;   // per-class pthread trampoline

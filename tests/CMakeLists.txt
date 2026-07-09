@@ -9,6 +9,8 @@ include(Catch)
 add_executable(iouring_net-test
   smoke_test.cpp
   app/handle_worker_skeleton_test.cpp
+  app/session_table_test.cpp
+  app/spsc_mailbox_test.cpp
   diagnostic/profiler_scope_test.cpp
   memory/packet_pool_test.cpp
   net/echo_smoke_test.cpp
@@ -31,7 +33,7 @@ iouring_net_apply_warnings(iouring_net-test)
 # build-time test-discovery run crashes with
 # `FATAL: ThreadSanitizer: unexpected memory mapping` because noble's
 # vm.mmap_rnd_bits=32 conflicts with TSan's hardcoded address layout.
-# See docs/08-test-strategy.md § "TSan on Ubuntu 24.04".
+# See doc/08-test-strategy.md § "TSan on Ubuntu 24.04".
 catch_discover_tests(iouring_net-test
   DISCOVERY_MODE PRE_TEST
   EXTRA_ARGS --allow-running-no-tests)
