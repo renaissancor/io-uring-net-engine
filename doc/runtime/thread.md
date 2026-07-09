@@ -101,7 +101,7 @@ version should keep ownership and error behavior visible.
 
 **Creation.** `thread(fn, arg)` calls `pthread_create` with default
 attributes. The return is checked via `LNX_CHECK` from `src/check.h`
-(see `wiki/check.md`) — traps via `int 3` → `SIGTRAP` in **both debug
+(see `doc/check.md`) — traps via `int 3` → `SIGTRAP` in **both debug
 and release**, with no exception runtime involvement. `pthread_create`
 failure is OOM/thread-limit territory and unrecoverable in practice;
 trapping immediately at the misuse site produces a clean core dump for
@@ -153,6 +153,36 @@ runtime's thread creation API. On Windows that means prefer
 wrapper should not take a name in v1. `thread_context::set_thread_role`
 can call `prctl(PR_SET_NAME, ...)` after the thread starts.
 
+## Cooperative stop + blocking waits
+
+A stop signal from the supervisor is a **cooperative** atomic flag
+(`handle_thread::request_stop()` CAS-es `running → draining`). The engine loop
+observes it and drains. This works only while the loop actually reaches the flag
+check between iterations.
+
+The current skeleton loops (`engine_worker::run_loop`, `engine_acceptor::run_loop`)
+spin on `lnx::this_thread::yield()` with non-blocking `io_uring_peek_cqe`, so the
+flag is observed every tick — no wake needed. The echo smoke
+(`tests/net/echo_smoke_test.cpp`) does the same: busy-poll + a `stop` atomic, and
+a throwaway connect to satisfy the parked accept SQE on the way out.
+
+**The caveat lands the moment a loop blocks** in `io_uring_wait_cqe` or
+`io_uring_submit_and_wait`. If no completion arrives, the thread sleeps in the
+kernel and never observes `request_stop()` — the atomic flag alone cannot wake a
+thread parked in a syscall. Pair `request_stop()` with a wake strategy:
+
+- **eventfd wake** — the supervisor writes an eventfd that the loop has a
+  registered `POLL`/`READ` SQE on; cleanest end state.
+- **bounded-timeout wait** — `io_uring_wait_cqe_timeout` / a timeout SQE so the
+  loop re-checks the flag at a bounded cadence. Acceptable for the first pass if
+  the latency/CPU tradeoff is documented.
+- **message-ring wake** — a mesh push doubles as the wake event.
+
+For the first blocking implementation a bounded timeout is fine; migrate to
+eventfd wake when the CPU/latency budget is tightened. See
+`doc/10-realtime-server-architecture.md` §9. This is also tracked in Open
+Questions #3 (cancellation vs. cooperative stop).
+
 ## Interaction With profiler::manager
 
 TLS isolation is the profiler's multithreaded safety boundary. A
@@ -190,7 +220,7 @@ Future tests:
   multi-thread coverage.
 - **`thread_context` integration.** Worker calls `set_thread_role`, then
   `this_thread()` reports the worker role while main remains `main`. Lands
-  alongside `wiki/runtime/thread_context.md` implementation.
+  alongside `doc/runtime/thread_context.md` implementation.
 - **TSan run.** Catch races in the join/detach state machine under
   contention. Ratchet TSan-clean as a CI gate when the tsan preset lands.
 

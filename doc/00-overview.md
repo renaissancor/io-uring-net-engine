@@ -8,9 +8,25 @@ that the rest of the docs assume.
 
 ## Goal in one sentence
 
-A C++20 TCP network library on `io_uring` that preserves the
-engine-primitives lessons from the Windows IOCP reference repos while shedding
-Win32 entirely.
+A Linux-native C++20 realtime interaction network engine for MMO/RTS-style
+servers that keeps session I/O, packet parsing, and authoritative world-state
+mutation on the same owner thread so per-interaction latency is predictable —
+carrying the engine-primitives lessons of the Windows IOCP reference repos onto
+Linux `io_uring` while shedding Win32 entirely.
+
+The primary motivation is **bounded, inspectable realtime interaction
+latency**, not raw throughput: a packet arriving for an in-world session is
+completed, parsed, validated, and applied to authoritative state by the same
+worker thread that owns that state. The runtime shape, ownership invariants, and
+first three-thread milestone live in
+[`10-realtime-server-architecture.md`](10-realtime-server-architecture.md); this
+overview covers the layered subsystem map and cross-cutting tenets.
+
+**Ownership invariants** (full statement in doc 10): one fd → one owner thread;
+one room/world state → one owner thread; the owning worker parses and executes
+its own packets in-thread; cross-thread work is SPSC message passing, never
+shared mutable state on the hot path; gameplay packets are valid only after
+`S_ENTER_WORLD_OK`.
 
 ---
 
@@ -24,7 +40,7 @@ Win32 entirely.
 │  Network layer                                                       │
 │  Service · Listener · Session · SessionHandle · PacketFraming        │
 │  (PacketHandler/dispatcher: deferred — product-side, see             │
-│   wiki/network/packet_handler.md)                                    │
+│   doc/network/packet_handler.md)                                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Runtime layer                                                       │
 │  Reactor (io_uring) · JobQueue · ThreadContext                       │
@@ -79,13 +95,13 @@ connects the two projects.
 | Network     | `listener`                             | Port       | `SelectServer/.../Net.cpp:181` (accept loop)            |
 | Network     | `session`                              | New        | Replaces select-loop `Session` struct (`SelectServer/.../Net.h:39`) |
 | Network     | `packet_framing`                       | Port       | Concept from `SelectServer/.../Network.cpp:377` (magic header) |
-| Network     | `packet_handler`                       | Deferred   | Pulled out of library v1 — the dispatcher is product-side. See `wiki/network/packet_handler.md` (status note) and `iouring-net-server/wiki/server/dispatch.md`. |
+| Network     | `packet_handler`                       | Deferred   | Pulled out of library v1 — the dispatcher is product-side. See `doc/network/packet_handler.md` (status note) and `iouring-net-server/wiki/server/dispatch.md`. |
 
 **Status legend:**
 - **Port** — design is OS-agnostic; implementation is a clean transcription with the platform layer swapped.
 - **Rewrite** — same intent, different primitives; implementation is rewritten against `std::atomic` / `std::mutex` / `std::shared_mutex`.
 - **New** — no reference implementation exists; designed from first principles for this repo.
-- **Deferred** — designed but pulled out of v1; either moved to the product repo or scheduled for a later library milestone. The original spec stays in `wiki/` as a status note so the rationale is grep-able.
+- **Deferred** — designed but pulled out of v1; either moved to the product repo or scheduled for a later library milestone. The original spec stays in `doc/` as a status note so the rationale is grep-able.
 
 ---
 
@@ -116,7 +132,7 @@ This is a design-doc honesty marker, not a problem.
    `N_workers = 1`; the same shape scales to N>1 unchanged. See
    `.omc/wiki/threading-model-per-worker-io-uring-copy-via-inbox.md`,
    `.omc/wiki/worker-class-and-thread-roles.md`, and
-   `docs/discussions/2026-05-19-server-architecture.md` (historical, pre-pivot).
+   `design/2026-05-19-server-architecture.md` (historical, pre-pivot).
 
 2. **One reactor per thread, optionally one thread.** v1 ships
    single-threaded. Multi-threaded support is a v2 concern, designed for but
@@ -148,7 +164,7 @@ This is a design-doc honesty marker, not a problem.
    scoped honestly: it does **not** mean an unmodified Windows client
    binary speaks to the Linux server end-to-end (v1 ships no
    compat-deframer), and "strip 0x89" alone is **not** sufficient. See
-   [`../wiki/network/packet_framing.md`](../wiki/network/packet_framing.md)
+   [`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
    § "Purpose" and the consumer-side detail in
    [`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
    § "Parity with the Windows reference."
@@ -184,7 +200,7 @@ This is a design-doc honesty marker, not a problem.
   research project.
 - **Magic byte (0x89) in packet header.** SelectServer's reference
   framer uses one; we explicitly do not. Application-level packet IDs
-  do the same job. See `wiki/network/packet_framing.md`.
+  do the same job. See `doc/network/packet_framing.md`.
 
 ---
 

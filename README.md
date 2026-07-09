@@ -1,25 +1,38 @@
 # iouring-net-lib
 
-A Linux-native, C++20 network engine built on `io_uring` and coroutines. The
-goal is a small, presentable library that demonstrates modern Linux systems
-programming applied to the kind of high-throughput connection handling that
-shows up in AI inference serving, distributed runtimes, and async backends —
-the same lessons that the Windows IOCP family of reference projects teaches,
-ported to a 2026-relevant stack.
+A Linux-native C++20 realtime interaction network engine for MMO/RTS-style
+servers, built on `io_uring`. The first demo is room-based chat; the engine
+target is persistent TCP sessions, world-thread ownership, packet routing, and
+lock-free thread-to-thread messaging on Linux `io_uring`.
 
-The CMake scaffolding, dependency graph (`liburing`, `{fmt}`, `Catch2`,
-`tl::expected`), CI floor job, and an `examples/hello/` smoke executable
-have landed. Subsystem source files (memory pool, ring buffer, reactor,
-session, …) have **design specs under `wiki/<category>/<name>.md`** and
-are not yet implemented — the wiki specs are detailed enough to build
-each one without re-deriving design.
+The reason this runtime exists is not only throughput — it is to keep the
+packet-to-authoritative-state path short, bounded, and inspectable under
+realtime interaction load. It carries the engine-primitives lessons of the
+Windows IOCP family of reference projects (architectural inspiration, not a
+compatibility goal) onto a 2026-relevant Linux stack.
+
+See [`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md)
+for the runtime shape, ownership invariants, and the first three-thread
+milestone. (No coroutines are implemented yet — the runtime path is hand-written
+`io_uring` SQEs; the identity is deliberately not tied to coroutines until such
+code exists.)
+
+Landed so far: the CMake scaffolding + dependency graph (`liburing`, `{fmt}`,
+`Catch2`, `tl::expected`) + CI floor job, the primitive layer
+(`sds::ring_buffer`, `mem::packet_pool`, `sync::` atomics/mutex,
+`diagnostic::profiler_scope`), the 3-role supervisor/acceptor/worker boot spine,
+and the thread-mesh primitives (`app::spsc_mailbox`, `app::session_table`). The
+data path on top — protocol framing, worker-side session storage, rooms, and the
+per-worker `io_uring` chat loop — is the current work. Per-file design specs live
+under `doc/<category>/<name>.md`; the runtime architecture lives in
+`doc/10-realtime-server-architecture.md`.
 
 ---
 
 ## Quick start
 
 Verified on Ubuntu 24.04 / WSL2 (kernel 6.6+) with `g++-12` or newer and
-`liburing-dev >= 2.5`. See `docs/06-system-setup.md` for the full
+`liburing-dev >= 2.5`. See `doc/06-system-setup.md` for the full
 distro-aware install runbook.
 
 ```bash
@@ -60,74 +73,85 @@ in this repo links against them.
 
 ## Scope
 
-In scope for v1 (echo server over a single connection):
+v1 milestone is **a single SessionManager + one WorldThread carrying room
+chat** (connect → room select → chat → disconnect), not merely an echo server
+over one connection. The `io_uring` echo smoke remains a low-level transport
+test, not the product milestone. See
+[`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md).
 
-1. `io_uring` reactor (replaces `IocpCore` / `select()`)
-2. C++20 coroutine `Session` with `co_await read()` / `co_await write()`
-3. Memory pool (47 size classes, ported from `IOCP_Rookiss/Engine/MemoryPool.h`)
-4. Object pool / allocator adapter (templated, OS-agnostic in design)
-5. Ring buffer + serial buffer (ported from `WindowsLibrary` / `SelectServer`)
-6. Sync primitives (`std::atomic`, `std::mutex`, `std::shared_mutex`,
-   custom Treiber stack to replace Win32 `SLIST`)
-7. Per-entity job queue (new design — note: not actually implemented in any
-   reference repo, so this is a fresh design informed by the lecture material)
-8. Packet framing: `[uint16 size | uint16 id][payload]` — a deliberately
-   wider 4-byte header than the Windows reference's 3-byte
-   `[0x89][u8 size][u8 type]`, lifting the limits from 256 IDs / 255-byte
-   payloads to 65 535 / 65 531. Parity with the reference is at the
-   **payload-byte level** (per-packet field serialization is byte-identical
-   on matching schemas), enabling **header-normalized trace replay** for
-   cross-platform verification. Not source-compatible; not a drop-in
-   live-client interop claim.
+In scope for v1:
 
-Out of scope for v1: ODBC / database layer, MMO room logic, deadlock profiler
-(may be ported later), Windows compatibility shims.
+1. **Fused worker-owner data plane** — one `io_uring` loop per worker owns its
+   fds, recv/send rings, and room state; recv completion, framing, handler
+   execution, and state mutation all run on that one thread. No separate network
+   thread; no coroutines.
+2. **Three-role runtime** — supervisor (spawn/shutdown), SessionManager/acceptor
+   (accept + session authority map), worker (owns adopted fds + rooms), wired by
+   SPSC mailboxes.
+3. **Room chat over the custom frame** — `[uint16 size | uint16 id][payload]`;
+   join / chat / leave, with gameplay packets gated behind `S_ENTER_WORLD_OK`.
+4. **Primitive layer** — `mem::packet_pool` (47 size classes, ported from
+   `IOCP_Rookiss`), `sds::ring_buffer`, and the `sync::` primitives
+   (project-owned `lnx::atomic*` / `lnx::mutex`, **no `std::` sync types** — see
+   the No-STL policy in `doc/04-coding-style.md`).
+
+Out of scope for v1: real login/auth, database/persistence, TLS, multiple
+workers, world migration, serious benchmark claims, and Windows compatibility
+shims. (Room chat itself is *in* scope — it is the v1 milestone, a testbed for
+the future interaction-space model.)
 
 ---
 
 ## Reading order
 
-Start with `docs/00-overview.md`. Then `docs/01-windows-to-linux-mapping.md`
-for the master API mapping table. After that, read whichever subsystem
-interests you — wiki specs are designed to be readable independently.
+Documentation is split into three trees:
 
-Cross-cutting documentation lives in `docs/`; per-source-file design
-specs live in `wiki/`. Each directory has its own `README.md` index.
+- **`doc/`** — the code documentation you build from. Project guides at the root
+  (`doc/INDEX.md` is the entry point: build order + dependency graph), and
+  per-source-file specs mirroring `src/` 1:1 under `doc/<path>.md`. This is the
+  **source of truth** — an agent can implement a unit from its spec alone.
+- **`design/`** — the dated brainstorm journal (the *why*: rationale,
+  alternatives, rejected ideas). Read for context; never a build dependency.
+- **`src/`** — the code.
+
+Start with `doc/INDEX.md`, then `doc/00-overview.md` for scope and the layered
+map, and `doc/10-realtime-server-architecture.md` for the runtime shape.
 
 ```
-docs/                  ← cross-cutting design + operations
-├── README.md          ← index of every doc + suggested reading paths
-├── 00-overview.md                    # scope, subsystem map, tenets, non-goals
-├── 01-windows-to-linux-mapping.md    # master Win32 → Linux API mapping
-├── 02-build-and-toolchain.md         # language, kernel, deps, repo layout
-├── 04-coding-style.md                # naming, error model, namespaces, aliases
-├── 05-cmake.md                       # CMake target, presets, deps.cmake
-├── 06-system-setup.md                # distro install runbook + smoke tests
-├── 07-ci-and-reproducibility.md      # CI matrix, Dockerfile, version-snapshot
-└── 08-test-strategy.md               # test pyramid, coverage targets, sanitizers
+doc/
+├── INDEX.md                          # build order + dependency graph (start here)
+├── TEMPLATE.md                       # per-file spec template
+├── README.md                         # reading-path index
+├── 00-overview.md … 10-realtime-server-architecture.md   # project guides
+├── sds/  memory/  sync/  diagnostic/  runtime/  network/  # per-file specs, mirror src/
+└── app/                              # app-layer specs (spsc_mailbox, … as they land)
 
-wiki/                  ← per-source-file design specs (one per planned src/ file)
-├── README.md          ← wiki ↔ src/ mapping table
-├── sds/               ring_buffer, serial_buffer, cstr_hash_map  (generic data structures, sds:: namespace)
-├── memory/            memory_pool, object_pool, leak_tracker
-├── sync/              sync_primitives, lock_free_stack
-├── diagnostic/        profiler_deadlock, profiler_scope
-├── runtime/           coroutine_task, job_queue, thread_context
-└── network/           io_uring_reactor, listener_and_service, session,
-                       session_handle, packet_framing
-                       (packet_handler deferred — product-side)
+design/                               # dated brainstorm journal (append-only)
 ```
+
+The relocated per-file specs under `doc/<category>/` are still in their original
+prose; reformatting them to `TEMPLATE.md` is ongoing (see `doc/INDEX.md`). The
+`app::` runtime layer is documented in `doc/10-realtime-server-architecture.md`
+plus the decision records under `.omc/wiki/`.
 
 ---
 
 ## Status
 
-- Design docs: stable across `docs/` and `wiki/`.
-- Build scaffolding: landed (CMake, presets, deps graph, CI floor job,
-  devcontainer, smoke test, `examples/hello/`).
-- First subsystem landed: `sds::ring_buffer` — direct port from
-  WindowsLibrary, 10 Catch2 cases / 46 assertions (`make test-sds`).
-- Next subsystems: `sds::cstr_hash_map`, `diagnostic::profiler_scope`,
-  then `recv_ring_buffer` / `send_ring_buffer` specializations.
-- First end-to-end milestone: minimal `io_uring` reactor that echoes a
-  single TCP connection.
+**Landed and tested** (full suite runs under ASan+UBSan; also builds on the
+gcc-12 floor preset):
+
+- Build scaffolding — CMake, presets, deps graph, CI floor job, devcontainer,
+  `examples/hello/`.
+- Primitive layer — `sds::ring_buffer<N, Sync>`, `sds::static_vector`,
+  `sds::cstr_hash_map`, `sds::malloc_vector`, `mem::packet_pool`, `sync::`
+  atomics/mutex, `diagnostic::profiler_scope`.
+- Runtime spine — 3-role supervisor boot (main / acceptor / worker), the
+  handle/engine split, and an `io_uring` echo *transport* smoke.
+- Thread mesh — `app::spsc_mailbox` (whole-frame SPSC) + the SessionManager
+  `app::session_table` authority map, both unit-tested and wired into the boot.
+
+**In progress** — the room-chat data path: protocol framing, worker-side
+session storage (SoA/mmap), rooms, and the per-worker `io_uring` chat loop, ending
+at the single-SessionManager + one-WorldThread milestone in
+[`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md).

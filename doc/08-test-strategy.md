@@ -71,6 +71,26 @@ test suite. They run on demand.
 | Packet framing      | every header value; split-header; malformed; cross-repo parity     |
 | Session handle      | non-owning + generation-stale detection; copy semantics            |
 | Job queue           | FIFO order; multi-thread push correctness                          |
+| spsc_mailbox        | whole-frame post/recv; partial consumes nothing; oversize refused; full = backpressure; FIFO across types **(landed)** |
+| session_table       | id minting; generation guard; state/owner transitions; remove + slot reuse; full-table refusal **(landed)** |
+
+### Realtime-server architecture tests
+
+Tied to the three-thread milestone (see
+[`10-realtime-server-architecture.md`](10-realtime-server-architecture.md)):
+
+- **SessionManager/Worker handoff** — accepted fd becomes worker-owned;
+  `S_ENTER_WORLD_OK` emitted only after worker adoption + room join; worker
+  close notifies the SessionManager; stale-generation messages discarded.
+- **Room chat** — join room; broadcast to room members; leave removes
+  membership; a packet before `S_ENTER_WORLD_OK` is rejected.
+- **Thread-mesh** — SPSC acceptor→worker preserves message order;
+  worker→acceptor preserves close-notification order.
+
+The `io_uring` echo smoke stays a low-level transport smoke, not the
+end-to-end product milestone. Future: world migration quiesces the old owner
+before adoption by the new owner; DB auth validates `session_id + generation`;
+a full logger queue does not block a worker.
 
 Packet dispatch / handler-table / codec tests are **not** part of
 the library test pyramid in v1 — the dispatcher and codec are
@@ -89,7 +109,7 @@ server **after a header-normalization step** that converts the
 reference's 3-byte `[0x89][u8 size][u8 type]` header to this library's
 4-byte `[u16 size][u16 id]` header. Parity is a **payload-byte**
 claim, not a frame-byte claim — see
-[`../wiki/network/packet_framing.md`](../wiki/network/packet_framing.md)
+[`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
 § "Purpose" and
 [`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
 § "Parity with the Windows reference" for why.
