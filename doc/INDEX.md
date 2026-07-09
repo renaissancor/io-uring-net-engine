@@ -81,6 +81,35 @@ higher tier. Pick any order within a tier.
   but not yet reformatted to the normative template. Reformatting those, and
   writing new specs for the `app/` layer, is the remaining spec work.
 
+## Spec reconciliation status
+
+Reconciling relocated specs to `TEMPLATE.md` surfaced that several described
+**retired or nonexistent** code — the code is the current source of truth.
+
+**Reconciled to the built API** (template form, verified against the header):
+`sds/ring_buffer`, `sds/static_vector`, `sds/cstr_hash_map`, `sds/malloc_vector`,
+`sync/atomic`, `sync/mutex`, `runtime/thread`, `diagnostic/profiler_scope`,
+`check`; plus `app/spsc_mailbox` (reference shape).
+
+**Drift corrected along the way:**
+- `ring_buffer` — old spec described a fully **retired** growable `char*` ring.
+- `check` / `mutex` — advertised **`LNX_DCHECK`**, which does not exist.
+- `thread` — old spec's API sketch over-promised (no name param / cached TID).
+
+**Deferred — `memory/packet_pool` (needs a design decision, not reconciliation):**
+The landed `src/memory/packet_pool` is a 3-bucket (64/256/1024 B) TLS/mmap byte
+pool, but no spec matches it — `doc/memory/memory_pool.md` (48-class allocator),
+`doc/memory/object_pool.md`, and `doc/network/packet_pool.md` (cs/sc-typed) all
+describe **different, unbuilt** designs. Deciding which design is the future
+(and whether the landed pool supersedes the 48-class one) is a separate
+discussion; until then, `doc/memory/packet_pool.md` is intentionally unwritten
+and those three specs are treated as **planned**, not landed.
+
+**Not yet written — `app/` layer specs:** `message`, `session_id`,
+`session_record`, `config`, `session_table`, `handle_thread/worker/acceptor`,
+`engine_worker/acceptor`, `main`, `detail/thread_role` (only `spsc_mailbox`
+exists). These document current work and have no relocated predecessor.
+
 > Layout migration is **done**: brainstorm → `design/`, per-file specs and
 > project guides → `doc/`. `doc/app/spsc_mailbox.md` is the filled reference
 > shape; match it when reformatting the relocated specs.
