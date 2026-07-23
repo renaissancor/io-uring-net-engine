@@ -57,6 +57,7 @@ vgcore.*
 .env
 .env.*
 scratch/
+.worktrees/
 
 # Merge / patch artifacts
 *.orig
