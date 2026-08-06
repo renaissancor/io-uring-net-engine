@@ -90,6 +90,16 @@ class ring_buffer {
         if (n) __builtin_memcpy(dst, src, n);
     }
 
+    // Write n bytes at the storage offset for `cursor`, splitting across the
+    // wrap. Does NOT publish — the caller advances the producer cursor once,
+    // after every region has landed, so a reader never observes a torn frame.
+    void write_at(i64 cursor, const byte* src, usize n) noexcept {
+        const usize off   = static_cast<usize>(cursor) & MASK;
+        const usize first = umin(n, N - off);              // contiguous run to end
+        copy(buffer_ + off, src, first);
+        copy(buffer_, src + first, n - first);             // wrapped remainder
+    }
+
 public:
     ring_buffer() noexcept = default;
     ~ring_buffer()         = default;
@@ -114,10 +124,25 @@ public:
     usize enqueue(const byte* src, usize n) noexcept {
         const i64 w = sync_.p_own();
         if (static_cast<usize>(w - sync_.p_peer()) + n > N) return 0;
-        const usize off   = static_cast<usize>(w) & MASK;
-        const usize first = umin(n, N - off);              // contiguous run to end
-        copy(buffer_ + off, src, first);
-        copy(buffer_, src + first, n - first);             // wrapped remainder
+        write_at(w, src, n);
+        sync_.p_publish(w + static_cast<i64>(n));
+        return n;
+    }
+
+    // Gather enqueue: publishes `a` immediately followed by `b` as ONE
+    // all-or-nothing frame (returns na + nb, or 0 if the pair does not fit).
+    //
+    // This is what lets a length-prefixed frame go in WITHOUT staging it in a
+    // scratch buffer first: pass the header as `a` and the body as `b`. Both
+    // regions land before the single p_publish(), so a reader sees the whole
+    // frame or none of it — the same guarantee enqueue() gives, minus the
+    // staging copy and minus any cap on body size beyond the ring itself.
+    usize enqueue2(const byte* a, usize na, const byte* b, usize nb) noexcept {
+        const i64   w = sync_.p_own();
+        const usize n = na + nb;
+        if (static_cast<usize>(w - sync_.p_peer()) + n > N) return 0;
+        write_at(w, a, na);
+        write_at(w + static_cast<i64>(na), b, nb);
         sync_.p_publish(w + static_cast<i64>(n));
         return n;
     }

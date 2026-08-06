@@ -128,6 +128,122 @@ TEST_CASE("ring_buffer: zero-size operations are no-ops", "[sds][ring_buffer]") 
     REQUIRE(std::memcmp(out, "abc", 3) == 0);
 }
 
+TEST_CASE("ring_buffer: enqueue2 joins two regions into one frame",
+          "[sds][ring_buffer]") {
+    ring_buffer<16, ring_sync::single> rb;
+    const byte hdr[2]  = {0xAA, 0xBB};
+    const byte body[3] = {1, 2, 3};
+
+    REQUIRE(rb.enqueue2(hdr, 2, body, 3) == 5);
+    REQUIRE(rb.used_size() == 5);
+
+    byte out[5] = {};
+    REQUIRE(rb.dequeue(out, 5) == 5);
+    const byte want[5] = {0xAA, 0xBB, 1, 2, 3};   // b lands directly after a
+    REQUIRE(std::memcmp(out, want, 5) == 0);
+    REQUIRE(rb.is_empty());
+}
+
+TEST_CASE("ring_buffer: enqueue2 is all-or-nothing on the PAIR",
+          "[sds][ring_buffer]") {
+    ring_buffer<8, ring_sync::single> rb;
+    const byte hdr[4]  = {1, 2, 3, 4};
+    const byte body[6] = {5, 6, 7, 8, 9, 10};
+
+    // Either region alone would fit; together they exceed capacity. Nothing
+    // may land — a partial header would strand a frame the reader can't parse.
+    REQUIRE(rb.enqueue2(hdr, 4, body, 6) == 0);
+    REQUIRE(rb.is_empty());
+
+    // Exactly-capacity pair is accepted.
+    REQUIRE(rb.enqueue2(hdr, 4, body, 4) == 8);
+    REQUIRE(rb.is_full());
+}
+
+TEST_CASE("ring_buffer: enqueue2 empty second region equals plain enqueue",
+          "[sds][ring_buffer]") {
+    ring_buffer<16, ring_sync::single> rb;
+    const byte hdr[3] = {7, 8, 9};
+
+    REQUIRE(rb.enqueue2(hdr, 3, nullptr, 0) == 3);   // null body legal at len 0
+    byte out[3] = {};
+    REQUIRE(rb.dequeue(out, 3) == 3);
+    REQUIRE(std::memcmp(out, hdr, 3) == 0);
+}
+
+TEST_CASE("ring_buffer: enqueue2 splits correctly when the wrap falls inside "
+          "the FIRST region", "[sds][ring_buffer]") {
+    ring_buffer<8, ring_sync::single> rb;
+
+    // March the cursor to offset 7 so a 2-byte header straddles the end.
+    const byte filler[7] = {};
+    byte       drop[7]   = {};
+    REQUIRE(rb.enqueue(filler, 7) == 7);
+    REQUIRE(rb.dequeue(drop, 7) == 7);
+
+    const byte hdr[2]  = {0xDE, 0xAD};
+    const byte body[4] = {1, 2, 3, 4};
+    REQUIRE(rb.enqueue2(hdr, 2, body, 4) == 6);      // hdr spans offsets 7 -> 0
+
+    byte out[6] = {};
+    REQUIRE(rb.dequeue(out, 6) == 6);
+    const byte want[6] = {0xDE, 0xAD, 1, 2, 3, 4};
+    REQUIRE(std::memcmp(out, want, 6) == 0);
+    REQUIRE(rb.is_empty());
+}
+
+TEST_CASE("ring_buffer: enqueue2 splits correctly when the wrap falls inside "
+          "the SECOND region", "[sds][ring_buffer]") {
+    ring_buffer<8, ring_sync::single> rb;
+
+    // Cursor to offset 4: the 2-byte header fits flat, the 4-byte body wraps.
+    const byte filler[4] = {};
+    byte       drop[4]   = {};
+    REQUIRE(rb.enqueue(filler, 4) == 4);
+    REQUIRE(rb.dequeue(drop, 4) == 4);
+
+    const byte hdr[2]  = {0xBE, 0xEF};
+    const byte body[4] = {9, 8, 7, 6};
+    REQUIRE(rb.enqueue2(hdr, 2, body, 4) == 6);      // body spans offsets 6,7 -> 0,1
+
+    byte out[6] = {};
+    REQUIRE(rb.dequeue(out, 6) == 6);
+    const byte want[6] = {0xBE, 0xEF, 9, 8, 7, 6};
+    REQUIRE(std::memcmp(out, want, 6) == 0);
+    REQUIRE(rb.is_empty());
+}
+
+TEST_CASE("ring_buffer: enqueue2 matches a pre-assembled enqueue at every "
+          "wrap offset", "[sds][ring_buffer]") {
+    // Sweep the producer cursor through every offset so the wrap lands inside
+    // the header, inside the body, and exactly between them.
+    constexpr usize k_hdr  = 3;
+    constexpr usize k_body = 5;
+
+    for (usize start = 0; start < 8; ++start) {
+        ring_buffer<8, ring_sync::single> rb;
+        const byte filler[8] = {};
+        byte       drop[8]   = {};
+        if (start) {
+            REQUIRE(rb.enqueue(filler, start) == start);
+            REQUIRE(rb.dequeue(drop, start) == start);
+        }
+
+        byte hdr[k_hdr];
+        byte body[k_body];
+        for (usize i = 0; i < k_hdr; ++i)  hdr[i]  = static_cast<byte>(0xF0 + i);
+        for (usize i = 0; i < k_body; ++i) body[i] = static_cast<byte>(i + 1);
+
+        REQUIRE(rb.enqueue2(hdr, k_hdr, body, k_body) == k_hdr + k_body);
+
+        byte out[k_hdr + k_body] = {};
+        REQUIRE(rb.dequeue(out, k_hdr + k_body) == k_hdr + k_body);
+        REQUIRE(std::memcmp(out, hdr, k_hdr) == 0);
+        REQUIRE(std::memcmp(out + k_hdr, body, k_body) == 0);
+        REQUIRE(rb.is_empty());
+    }
+}
+
 TEST_CASE("ring_buffer: zero-copy enqueue hook (io_uring recv shape)",
           "[sds][ring_buffer]") {
     ring_buffer<8, ring_sync::single> rb;
