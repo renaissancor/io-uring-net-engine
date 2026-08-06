@@ -1,12 +1,12 @@
 #pragma once
-// app/handle_thread.h
+// app/thread_ctl.h
 //
 // Universal per-thread metadata: identity, atomic lifecycle state,
 // kernel tid cache, heartbeat counter, OS thread handle. Composed by
-// every role-specific handle (handle_worker, handle_db,
-// handle_supervisor) — never inherited.
+// every role-specific control block (worker_ctl, db_ctl,
+// supervisor_ctl) — never inherited.
 //
-// See .omc/wiki/handle-engine-split-pattern.md for the locked design.
+// See .omc/wiki/ctl-engine-split-pattern.md for the locked design.
 // State transitions follow .omc/wiki/worker-lifecycle-three-state-protocol.md.
 
 #include "../runtime/thread.h"
@@ -32,14 +32,14 @@ enum class state : i32 {
     stopped  = 3,
 };
 
-struct handle_thread {
-    handle_thread(i32 id, const char* name) noexcept;
-    ~handle_thread() noexcept = default;
+struct thread_ctl {
+    thread_ctl(i32 id, const char* name) noexcept;
+    ~thread_ctl() noexcept = default;
 
-    handle_thread(const handle_thread&)            = delete;
-    handle_thread& operator=(const handle_thread&) = delete;
-    handle_thread(handle_thread&&)                 = delete;
-    handle_thread& operator=(handle_thread&&)      = delete;
+    thread_ctl(const thread_ctl&)            = delete;
+    thread_ctl& operator=(const thread_ctl&) = delete;
+    thread_ctl(thread_ctl&&)                 = delete;
+    thread_ctl& operator=(thread_ctl&&)      = delete;
 
     // Observers — safe from any thread (atomic snapshots).
     i32         id()          const noexcept { return _id; }
@@ -62,7 +62,7 @@ struct handle_thread {
     void        request_stop() noexcept;   // CAS running→draining; idempotent
     void        join()         noexcept;   // waits for thread exit + post-asserts stopped
 
-    // Data — public for composition; the role-specific handle's entry()
+    // Data — public for composition; the role-specific ctl's entry()
     // trampoline writes _name, _kernel_tid, _state directly.
     i32                                _id;
     char                               _name[16];        // pthread_setname_np cap

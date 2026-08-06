@@ -1,7 +1,7 @@
-#include "handle_acceptor.h"
+#include "acceptor_ctl.h"
 
 #include "detail/thread_role.h"
-#include "engine_acceptor.h"
+#include "acceptor_engine.h"
 
 #include "../check.h"
 #include "../memory/packet_pool.h"
@@ -11,36 +11,36 @@
 
 namespace app {
 
-handle_acceptor::handle_acceptor(const config& cfg) noexcept
+acceptor_ctl::acceptor_ctl(const config& cfg) noexcept
     : base(0, "acceptor"),   // singleton: id is vestigial (not a worker index)
       _cfg(cfg)
 {
 }
 
-void handle_acceptor::start() noexcept {
+void acceptor_ctl::start() noexcept {
     // Move-assigns a freshly-constructed lnx::thread into base._thread.
     // lnx::thread's move-assign LNX_CHECKs the destination is not already
     // joinable — "no double-start" for free.
-    base._thread = lnx::thread{&handle_acceptor::entry, this};
+    base._thread = lnx::thread{&acceptor_ctl::entry, this};
 }
 
-void* handle_acceptor::entry(void* self) noexcept {
-    auto* h = static_cast<handle_acceptor*>(self);
+void* acceptor_ctl::entry(void* self) noexcept {
+    auto* h = static_cast<acceptor_ctl*>(self);
 
-    // (1) Install role token FIRST — gates engine_acceptor::instance().
+    // (1) Install role token FIRST — gates acceptor_engine::instance().
     detail::tls_role = detail::thread_role::acceptor;
 
     // (2) Identity for kernel-visible logs (ps -L, /proc/PID/task/TID/comm).
     pthread_setname_np(pthread_self(), h->base._name);
 
     // (3) Publish kernel tid BEFORE state transitions to running. Release
-    //     ordering pairs with the acquire-load in handle_thread::kernel_tid().
+    //     ordering pairs with the acquire-load in thread_ctl::kernel_tid().
     h->base._kernel_tid->store_release(lnx::this_thread::kernel_tid());
 
     // (4) TLS singletons construct on first call. The acceptor owns its own
     //     packet_pool (pre-session recv buffers in the data-path phase).
     mem::packet_pool::instance().prewarm();
-    engine_acceptor& eng = engine_acceptor::instance();
+    acceptor_engine& eng = acceptor_engine::instance();
     eng.attach(h);
 
     // (5) CAS-promote starting->running — same race-safe pattern as the

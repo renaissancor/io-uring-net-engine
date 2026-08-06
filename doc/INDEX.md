@@ -27,7 +27,8 @@ higher tier. Pick any order within a tier.
 | Unit | Source | Status | Depends | Spec |
 |---|---|---|---|---|
 | `sync/atomic` | `src/sync/atomic.h` | landed | types | _todo_ |
-| `sds/ring_buffer` | `src/sds/ring_buffer.h` | landed | sync/atomic, types | _todo_ |
+| `sds/ring_buffer` | `src/sds/ring_buffer.h` | landed | sync/atomic, types | [spec](sds/ring_buffer.md) |
+| `sds/pipe` | `src/sds/pipe.h` | landed | ring_buffer, types | [spec](sds/pipe.md) |
 | `sds/static_vector` | `src/sds/static_vector.h` | landed | types, check | _todo_ |
 | `memory/packet_pool` | `src/memory/packet_pool.{h,cpp}` | landed | types, check | _todo_ |
 | `runtime/thread` | `src/runtime/thread.h` | landed | check | _todo_ |
@@ -44,22 +45,22 @@ higher tier. Pick any order within a tier.
 ### Tier 3 — mesh transport & authority
 | Unit | Source | Status | Depends | Spec |
 |---|---|---|---|---|
-| `app/spsc_mailbox` | `src/app/spsc_mailbox.h` | landed | message, ring_buffer, check, types | [spec](app/spsc_mailbox.md) |
+| `app/mesh` | `src/app/mesh.h` | landed | message, sds::pipe, check, types | [spec](app/mesh.md) |
 | `app/session_table` | `src/app/session_table.{h,cpp}` | landed | config, session_id, session_record | _todo_ |
 
-### Tier 4 — thread handles & engines
+### Tier 4 — thread control blocks & engines
 | Unit | Source | Status | Depends | Spec |
 |---|---|---|---|---|
-| `app/handle_thread` | `src/app/handle_thread.{h,cpp}` | landed | runtime/thread, sync/atomic, types | _todo_ |
-| `app/handle_worker` | `src/app/handle_worker.{h,cpp}` | landed | handle_thread, config, spsc_mailbox | _todo_ |
-| `app/handle_acceptor` | `src/app/handle_acceptor.{h,cpp}` | landed | handle_thread, config, spsc_mailbox | _todo_ |
-| `app/engine_worker` | `src/app/engine_worker.{h,cpp}` | in-progress | handle_worker, thread_role | _todo_ |
-| `app/engine_acceptor` | `src/app/engine_acceptor.{h,cpp}` | in-progress | handle_acceptor, thread_role | _todo_ |
+| `app/thread_ctl` | `src/app/thread_ctl.{h,cpp}` | landed | runtime/thread, sync/atomic, types | _todo_ |
+| `app/worker_ctl` | `src/app/worker_ctl.{h,cpp}` | landed | thread_ctl, config, mesh | _todo_ |
+| `app/acceptor_ctl` | `src/app/acceptor_ctl.{h,cpp}` | landed | thread_ctl, config, mesh | _todo_ |
+| `app/worker_engine` | `src/app/worker_engine.{h,cpp}` | in-progress | worker_ctl, thread_role | _todo_ |
+| `app/acceptor_engine` | `src/app/acceptor_engine.{h,cpp}` | in-progress | acceptor_ctl, thread_role | _todo_ |
 
 ### Tier 5 — supervisor
 | Unit | Source | Status | Depends | Spec |
 |---|---|---|---|---|
-| `app/main` | `src/app/main.cpp` | landed | config, handles, spsc_mailbox, static_vector | _todo_ |
+| `app/main` | `src/app/main.cpp` | landed | config, ctls, mesh, static_vector | _todo_ |
 
 ### Tier 6 — data path (planned; see `doc/10-realtime-server-architecture.md` + `handoff.md`)
 | Unit | Source | Status | Depends | Spec |
@@ -67,7 +68,7 @@ higher tier. Pick any order within a tier.
 | `app/protocol` | `src/app/protocol.{h,cpp}` | planned | message, types | _todo_ |
 | `app/session` (worker-side, SoA/mmap) | `src/app/session.*` | planned | ring_buffer, session_id | _todo_ |
 | `app/world_room` | `src/app/world_room.{h,cpp}` | planned | session_id | _todo_ |
-| engine data-path loop | `engine_worker` / `engine_acceptor` | planned | all of tiers 0–4 | _todo_ |
+| engine data-path loop | `worker_engine` / `acceptor_engine` | planned | all of tiers 0–4 | _todo_ |
 
 ---
 
@@ -89,7 +90,7 @@ Reconciling relocated specs to `TEMPLATE.md` surfaced that several described
 **Reconciled to the built API** (template form, verified against the header):
 `sds/ring_buffer`, `sds/static_vector`, `sds/cstr_hash_map`, `sds/malloc_vector`,
 `sync/atomic`, `sync/mutex`, `runtime/thread`, `diagnostic/profiler_scope`,
-`check`; plus `app/spsc_mailbox` (reference shape).
+`check`; plus `app/mesh` and `sds/pipe` (reference shape).
 
 **Drift corrected along the way:**
 - `ring_buffer` — old spec described a fully **retired** growable `char*` ring.
@@ -106,10 +107,10 @@ discussion; until then, `doc/memory/packet_pool.md` is intentionally unwritten
 and those three specs are treated as **planned**, not landed.
 
 **Not yet written — `app/` layer specs:** `message`, `session_id`,
-`session_record`, `config`, `session_table`, `handle_thread/worker/acceptor`,
-`engine_worker/acceptor`, `main`, `detail/thread_role` (only `spsc_mailbox`
+`session_record`, `config`, `session_table`, `thread_ctl/worker/acceptor`,
+`worker_engine/acceptor`, `main`, `detail/thread_role` (only `mesh`
 exists). These document current work and have no relocated predecessor.
 
 > Layout migration is **done**: brainstorm → `design/`, per-file specs and
-> project guides → `doc/`. `doc/app/spsc_mailbox.md` is the filled reference
+> project guides → `doc/`. `doc/app/mesh.md` is the filled reference
 > shape; match it when reformatting the relocated specs.

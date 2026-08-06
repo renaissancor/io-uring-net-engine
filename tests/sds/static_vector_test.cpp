@@ -2,7 +2,7 @@
 //
 // Unit tests for sds::static_vector<T, N>. The load-bearing case is a
 // non-default-constructible, non-movable, lifetime-tracking element type
-// (mirrors app::handle_worker): proves emplace_back constructs exactly the
+// (mirrors app::worker_ctl): proves emplace_back constructs exactly the
 // requested count and that clear/pop_back/dtor destroy each live element
 // exactly once.
 

@@ -10,7 +10,7 @@
 Inline fixed-**capacity**, variable-**size** vector: `N` slots live inside the
 object (no heap), and `size()` grows `0..N` as `emplace_back` placement-news a
 `T` into the next free slot. It exists to hold **non-default-constructible AND
-non-movable, address-pinned** types — e.g. `app::handle_worker` — which
+non-movable, address-pinned** types — e.g. `app::worker_ctl` — which
 `std::array`, `std::vector`, and `sds::malloc_vector` cannot.
 
 ## API
@@ -88,6 +88,6 @@ non-movable element type.
 
 ## Rationale
 
-- Built to hold `app::handle_worker` (non-movable, address-pinned) in the
+- Built to hold `app::worker_ctl` (non-movable, address-pinned) in the
   supervisor's LANDLORD worker table — see `design/2026-05-25-handle-engine-split.md`.
 - Pairs with the non-movable [[ring_buffer]] storage rule.

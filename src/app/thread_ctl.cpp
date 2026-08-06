@@ -1,10 +1,10 @@
-#include "handle_thread.h"
+#include "thread_ctl.h"
 
 #include "../check.h"
 
 namespace app {
 
-handle_thread::handle_thread(i32 id, const char* name) noexcept
+thread_ctl::thread_ctl(i32 id, const char* name) noexcept
     : _id(id)
 {
     // Copy at most 15 bytes + NUL. No <cstring> needed; pthread_setname_np
@@ -17,7 +17,7 @@ handle_thread::handle_thread(i32 id, const char* name) noexcept
     _name[n] = '\0';
 }
 
-i32 handle_thread::kernel_tid() const noexcept {
+i32 thread_ctl::kernel_tid() const noexcept {
     // Acquire-load on _state pairs with the release-store in the entry
     // trampoline that publishes running. Without this acquire, the read
     // of _kernel_tid is unsynchronized. See wiki §"Trampoline pattern."
@@ -27,7 +27,7 @@ i32 handle_thread::kernel_tid() const noexcept {
     return _kernel_tid->load_relaxed();
 }
 
-void handle_thread::request_stop() noexcept {
+void thread_ctl::request_stop() noexcept {
     // Transitions starting OR running → draining via CAS-loop. Both are
     // legitimate "pre-stop" states:
     //   starting → draining   (supervisor asks before worker thread published
@@ -55,7 +55,7 @@ void handle_thread::request_stop() noexcept {
     // window; no-op.
 }
 
-void handle_thread::join() noexcept {
+void thread_ctl::join() noexcept {
     if (_thread.joinable()) {
         _thread.join();
     }

@@ -1,9 +1,9 @@
 #pragma once
-// app/engine_acceptor.h
+// app/acceptor_engine.h
 //
 // TLS-singleton body for the acceptor role. Constructed on first
 // instance() call FROM the owning acceptor thread (gated by the role-
-// token guard installed by handle_acceptor::entry). Reachable only from
+// token guard installed by acceptor_ctl::entry). Reachable only from
 // the owning thread; supervisor / workers cannot touch it.
 //
 // Skeleton: no listen socket, no io_uring, no accept loop. Just the
@@ -13,19 +13,19 @@
 
 namespace app {
 
-struct handle_acceptor;  // fwd-decl: engine knows handle, not the other way
+struct acceptor_ctl;  // fwd-decl: engine knows ctl, not the other way
 
-class engine_acceptor {
+class acceptor_engine {
 public:
     // TLS-Meyers singleton with role-token guard. Calling from any
     // non-acceptor thread (role-token != acceptor) traps LNX_CHECK BEFORE
     // the static thread_local body is constructed — same protocol as
-    // engine_worker.
-    static engine_acceptor& instance() noexcept;
+    // worker_engine.
+    static acceptor_engine& instance() noexcept;
 
-    // Post-construction wiring: engine learns its handle.
+    // Post-construction wiring: engine learns its ctl.
     // LNX_CHECKs: no-double-attach + no-null-attach.
-    void attach(handle_acceptor* h) noexcept;
+    void attach(acceptor_ctl* h) noexcept;
 
     // Tick loop. Honors the three-state lifecycle:
     //   running -> draining -> stopped.
@@ -34,16 +34,16 @@ public:
     // LNX_CHECKs: attach() must have happened first.
     void run_loop() noexcept;
 
-    engine_acceptor(const engine_acceptor&)            = delete;
-    engine_acceptor& operator=(const engine_acceptor&) = delete;
-    engine_acceptor(engine_acceptor&&)                 = delete;
-    engine_acceptor& operator=(engine_acceptor&&)      = delete;
+    acceptor_engine(const acceptor_engine&)            = delete;
+    acceptor_engine& operator=(const acceptor_engine&) = delete;
+    acceptor_engine(acceptor_engine&&)                 = delete;
+    acceptor_engine& operator=(acceptor_engine&&)      = delete;
 
 private:
-    engine_acceptor() noexcept;
-    ~engine_acceptor() noexcept;
+    acceptor_engine() noexcept;
+    ~acceptor_engine() noexcept;
 
-    handle_acceptor* _handle = nullptr;   // plain ptr — single-owner per Lock 7
+    acceptor_ctl* _ctl = nullptr;   // plain ptr — single-owner per Lock 7
 };
 
 }  // namespace app

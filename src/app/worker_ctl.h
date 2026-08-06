@@ -1,10 +1,10 @@
 #pragma once
-// app/handle_worker.h
+// app/worker_ctl.h
 //
-// Worker-role active-object handle. Composes handle_thread for the
+// Worker-role active-object control block. Composes thread_ctl for the
 // generic per-thread metadata + lifecycle, adds worker-specific cross-
-// thread observables. The TLS engine body lives in engine_worker; this
-// handle is the cross-thread API surface (atomic state, future SPSC
+// thread observables. The TLS engine body lives in worker_engine; this
+// ctl is the cross-thread API surface (atomic state, future SPSC
 // inbox pointers).
 //
 // Phase 2 skeleton: only the lifecycle plumbing. Stats atomics and
@@ -12,29 +12,29 @@
 // inboxes are first wired up.
 
 #include "config.h"
-#include "handle_thread.h"
-#include "spsc_mailbox.h"
+#include "thread_ctl.h"
+#include "mesh.h"
 
 namespace app {
 
-struct handle_worker {
-    handle_worker(i32 id, const config& cfg) noexcept;
-    ~handle_worker() noexcept = default;
+struct worker_ctl {
+    worker_ctl(i32 id, const config& cfg) noexcept;
+    ~worker_ctl() noexcept = default;
 
-    handle_worker(const handle_worker&)            = delete;
-    handle_worker& operator=(const handle_worker&) = delete;
-    handle_worker(handle_worker&&)                 = delete;
-    handle_worker& operator=(handle_worker&&)      = delete;
+    worker_ctl(const worker_ctl&)            = delete;
+    worker_ctl& operator=(const worker_ctl&) = delete;
+    worker_ctl(worker_ctl&&)                 = delete;
+    worker_ctl& operator=(worker_ctl&&)      = delete;
 
     // Role-specific lifecycle — start() spawns with worker trampoline.
     void start() noexcept;
 
     // Install the mesh edges the supervisor (LANDLORD) owns. `in` is the
-    // acceptor->worker admission inbox this worker drains; `out` is the
-    // worker->acceptor close-notify outbox it posts to. Must be called BEFORE
+    // acceptor->worker admission pipe this worker reads; `out` is the
+    // worker->acceptor close-notify pipe it writes. Must be called BEFORE
     // start() so the engine sees non-null edges on its first tick.
-    void install_mailboxes(acceptor_to_worker_mailbox* in,
-                           worker_to_acceptor_mailbox* out) noexcept {
+    void install_pipes(acceptor_to_worker_pipe* in,
+                       worker_to_acceptor_pipe* out) noexcept {
         _from_acceptor = in;
         _to_acceptor   = out;
     }
@@ -54,14 +54,14 @@ struct handle_worker {
     i32         kernel_tid()  const noexcept { return base.kernel_tid(); }
 
     // Data — public for composition.
-    handle_thread base;
+    thread_ctl base;
     config        _cfg;
 
-    // Mesh edges (supervisor-owned; this handle only borrows). The engine
-    // reads them via the handle. Null until install_mailboxes(); the adopt/
+    // Mesh edges (supervisor-owned; this ctl only borrows). The engine
+    // reads them via the ctl. Null until install_pipes(); the adopt/
     // drain logic that consumes them lands with worker-side session storage.
-    acceptor_to_worker_mailbox* _from_acceptor = nullptr;
-    worker_to_acceptor_mailbox* _to_acceptor   = nullptr;
+    acceptor_to_worker_pipe* _from_acceptor = nullptr;
+    worker_to_acceptor_pipe* _to_acceptor   = nullptr;
 
 private:
     static void* entry(void* self) noexcept;   // per-class pthread trampoline

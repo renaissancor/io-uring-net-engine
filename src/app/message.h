@@ -2,17 +2,17 @@
 // app/message.h
 //
 // Thread-mesh message vocabulary. Every cross-role message is a POD,
-// trivially-copyable struct so it can be blitted through a byte SPSC ring
-// (sds::ring_buffer<N, ring_sync::spsc>) with a plain memcpy — no
-// serialization, no heap, no vtables. See spsc_mailbox.h for the framing
-// wrapper and wiki inter-thread-comms-spsc-mesh-pattern for the mesh rule.
+// trivially-copyable struct so it can be blitted through a byte pipe
+// (sds::pipe<N>) with a plain memcpy — no serialization, no heap, no vtables.
+// See mesh.h for the framing functions and wiki
+// inter-thread-comms-spsc-mesh-pattern for the mesh rule.
 //
-// Wire frame in the ring:  [ app_msg_header | body bytes ]
+// Frame in the pipe:  [ app_msg_header | body bytes ]
 //   header.size = number of BODY bytes that follow the header (NOT counting
 //                 the header itself).
 //   header.type = app_msg_type discriminant for the body struct.
-// The mailbox length-prefixes with `size` so the consumer can peek the header,
-// confirm the whole body is present, and only then dequeue the frame.
+// mesh_post() length-prefixes with `size` so the reader can peek the header,
+// confirm the whole body is present, and only then consume the frame.
 
 #include "session_id.h"
 #include "../types.h"

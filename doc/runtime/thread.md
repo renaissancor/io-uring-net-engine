@@ -77,7 +77,7 @@ hole. (There is no `LNX_DCHECK` in the project — see [[check]].)
 ## Cooperative stop + blocking waits
 
 A supervisor stop is a **cooperative** atomic flag
-(`handle_thread::request_stop()` CAS-es `running → draining`); the engine loop
+(`thread_ctl::request_stop()` CAS-es `running → draining`); the engine loop
 must reach the flag check to observe it. Today's loops spin on
 `this_thread::yield()` + non-blocking `io_uring_peek_cqe`, so the flag is seen
 every tick. **Once a loop blocks** in `io_uring_wait_cqe`/`submit_and_wait`, an

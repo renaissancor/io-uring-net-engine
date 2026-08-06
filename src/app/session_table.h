@@ -3,7 +3,7 @@
 //
 // SessionManager authority table — the acceptor's fixed-capacity map from
 // session_id to its record (state + owner + generation). Correctness-first
-// prototype per handoff: a flat inline array of config::k_max_sessions slots
+// prototype per handoff: a flat inline array of config::k_session_capacity slots
 // with linear scan on lookup. No std:: container (project no-STL policy); no
 // heap. A slot with id == k_invalid_session is free.
 //
@@ -20,7 +20,7 @@
 namespace app {
 
 class session_table {
-    session_record _slots[config::k_max_sessions];
+    session_record _slots[config::k_session_capacity];
     session_id     _next_id = 1;   // monotonic; 0 stays reserved as invalid
     u32            _count   = 0;
 
@@ -32,7 +32,7 @@ public:
     session_table(session_table&&)                 = delete;
     session_table& operator=(session_table&&)      = delete;
 
-    static constexpr usize capacity() noexcept { return config::k_max_sessions; }
+    static constexpr usize capacity() noexcept { return config::k_session_capacity; }
     u32 count() const noexcept { return _count; }
 
     // Mint a new session in state `accepted`. Assigns a process-unique id and a

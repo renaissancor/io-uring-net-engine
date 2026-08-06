@@ -36,18 +36,18 @@ with direct control over memory, syscalls, wakeups, and ownership boundaries.
 
 ```
 Supervisor / Main
-  sole spawner; owns config + queues + thread handles; sigwait + ordered
+  sole spawner; owns config + queues + thread control blocks; sigwait + ordered
   shutdown. Never runs an engine.  (src/app/main.cpp)
 
 SessionManager / Acceptor
   owns listen/accept; mints session_id + generation; fake-auths guest
   sessions; owns the session_id -> state/owner authority map; hands the fd to
-  a worker; receives SessionClosed back.  (handle_acceptor / engine_acceptor)
+  a worker; receives SessionClosed back.  (acceptor_ctl / acceptor_engine)
 
 WorldThread / Worker
   owns active session fds, per-session recv/send rings, rooms/realtime state,
   and its own io_uring; parses packets and executes handlers in-thread.
-  (handle_worker / engine_worker)
+  (worker_ctl / worker_engine)
 
 LoggerThread   — later. One SPSC queue per producer; never blocks a worker.
 Db / AuthThread — later. Ticket validation off the hot path.
@@ -62,8 +62,9 @@ auth, and the logger thread are later passes.
 2. One world/zone/room state is mutated by exactly one owner thread.
 3. The worker that owns a session dequeues its packets and runs the handler in
    that same thread — no "parse on thread A, execute on thread B" split.
-4. Cross-thread communication is message passing through SPSC queues
-   (`app::spsc_mailbox`), never shared mutable state on the hot path.
+4. Cross-thread communication is message passing through SPSC byte pipes
+   (`sds::pipe`, framed by `app/mesh.h`), never shared mutable state on the
+   hot path.
 5. Gameplay/chat packets are valid only **after** `S_ENTER_WORLD_OK`.
 6. DB/auth/security are deferred; v1 uses a fake guest identity.
 
@@ -114,8 +115,11 @@ worker posts session_closed to the acceptor
 acceptor removes the mapping
 ```
 
-Mesh vocabulary is `app::message.h`; transport is `app::spsc_mailbox` over
-`sds::ring_buffer<N, ring_sync::spsc>`.
+Mesh vocabulary is `app::message.h`; transport is `sds::pipe<N>` (a bounded
+byte stream, no message boundaries — the same mechanism as `sds::ring_buffer`,
+named for its mesh role). Framing lives in `app/mesh.h`: `mesh_post` publishes
+`[header|body]` atomically via `pipe::enqueue2`, and the reader runs the SAME
+length-prefix parse loop the socket path uses.
 
 ## 8. Worker packet loop
 
@@ -123,7 +127,7 @@ Completion-driven, not scan-every-session-every-tick:
 
 ```
 while running:
-  drain acceptor -> worker mailbox (adopt / stop)
+  drain acceptor -> worker pipe (adopt / stop)
   submit pending io_uring work
   drain CQEs:
     recv completion -> commit bytes to that session's recv ring
@@ -135,7 +139,7 @@ while running:
 
 The CQE identifies the session; parse only that session's newly-arrived frames.
 If a ready-queue is ever needed, push session ids onto it only when a CQE or
-mailbox event makes them ready — do not poll idle sessions.
+mesh event makes them ready — do not poll idle sessions.
 
 ## 9. Blocking event-loop wakeup caveat
 

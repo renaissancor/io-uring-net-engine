@@ -71,7 +71,7 @@ test suite. They run on demand.
 | Packet framing      | every header value; split-header; malformed; cross-repo parity     |
 | Session handle      | non-owning + generation-stale detection; copy semantics            |
 | Job queue           | FIFO order; multi-thread push correctness                          |
-| spsc_mailbox        | whole-frame post/recv; partial consumes nothing; oversize refused; full = backpressure; FIFO across types **(landed)** |
+| mesh framing        | whole-frame post/recv; partial consumes nothing; zero-length body; full = backpressure; FIFO across types; wrap-straddling frames **(landed)** |
 | session_table       | id minting; generation guard; state/owner transitions; remove + slot reuse; full-table refusal **(landed)** |
 
 ### Realtime-server architecture tests

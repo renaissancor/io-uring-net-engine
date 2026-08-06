@@ -4,7 +4,7 @@
 // Inline fixed-CAPACITY, variable-SIZE vector. N slots live inside the
 // object (no heap); size() grows 0..N as emplace_back placement-news a T
 // into the next free slot. Carries non-default-constructible AND
-// non-movable, address-pinned types (e.g. app::handle_worker) — the reason
+// non-movable, address-pinned types (e.g. app::worker_ctl) — the reason
 // it exists over std::array / std::vector / sds::malloc_vector.
 //
 // NOT thread-safe. Container is non-copyable AND non-movable (elements may

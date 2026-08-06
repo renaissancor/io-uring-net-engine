@@ -16,11 +16,12 @@
 // Skeleton: no listen socket / accept / handoff yet — this proves the
 // 3-role roster and boot ordering. The data path lands next.
 
+#include "acceptor_ctl.h"
 #include "config.h"
 #include "detail/thread_role.h"
-#include "handle_acceptor.h"
-#include "handle_worker.h"
-#include "spsc_mailbox.h"
+#include "mesh.h"
+#include "roster.h"
+#include "worker_ctl.h"
 
 #include "../check.h"
 #include "../runtime/thread.h"
@@ -61,30 +62,34 @@ int main() {
     // (2) Mask termination signals before spawning (children inherit it).
     const sigset_t term_set = install_signal_mask();
 
-    // (3) Config. v1 starts at one worker; raise toward k_worker_max to scale.
+    // (3) Config. The thread roster is fixed at compile time (roster.h), so
+    //     there is no worker-count field to validate and no reachable state in
+    //     which the roster is wrong.
     config cfg;
-    cfg.worker_count = 1;
-    LNX_CHECK(cfg.worker_count >= 1 && cfg.worker_count <= config::k_worker_max);
 
-    // (4) LANDLORD: own all cross-thread storage up front. The worker table
-    //     holds address-pinned, non-movable handles -> sds::static_vector.
-    //     (acceptor->worker handoff inboxes land with the handoff phase.)
-    sds::static_vector<handle_worker, config::k_worker_max> workers;
-    for (i32 i = 0; i < cfg.worker_count; ++i) {
+    // (4) LANDLORD: own ALL cross-thread storage up front — constructed before
+    //     any thread that can see it exists, destroyed after every one is
+    //     joined. Exact-sized by the roster: one admission pipe and one
+    //     close-notify pipe per worker, no slack slots.
+    //
+    //     The pipes embed byte rings and are non-movable, so they are named
+    //     locals in this frame, which outlives every thread. The worker table
+    //     holds address-pinned, non-default-constructible control blocks, which
+    //     is what sds::static_vector exists for.
+    static_assert(roster::k_worker_count * (sizeof(acceptor_to_worker_pipe)
+                                            + sizeof(worker_to_acceptor_pipe))
+                      <= 1024 * 1024,
+                  "mesh edges live in main's stack frame — keep the roster's "
+                  "total under 1 MiB or move them to static storage");
+
+    acceptor_to_worker_pipe to_worker[roster::k_worker_count];
+    worker_to_acceptor_pipe from_worker[roster::k_worker_count];
+
+    sds::static_vector<worker_ctl, roster::k_worker_count> workers;
+    for (i32 i = 0; i < roster::k_worker_count; ++i) {
         workers.emplace_back(i, cfg);
+        workers[i].install_pipes(&to_worker[i], &from_worker[i]);
     }
-
-    // (4a) LANDLORD: allocate the acceptor<->worker mesh edges up front and
-    //      install them before any thread starts, so each engine sees non-null
-    //      edges on its first tick. The mailboxes are non-movable (they embed
-    //      byte rings), so they are named locals owned by this stack frame,
-    //      which outlives every thread (all are joined before main returns).
-    //      v1 wires the single worker 0; a per-worker edge array replaces this
-    //      when worker_count > 1.
-    LNX_CHECK(cfg.worker_count == 1);   // mesh fan-out is v1-single-worker only
-    acceptor_to_worker_mailbox to_worker;
-    worker_to_acceptor_mailbox from_worker;
-    workers[0].install_mailboxes(&to_worker, &from_worker);
 
     // (5) Start workers, then BARRIER until every one publishes running.
     for (auto& w : workers) {
@@ -95,12 +100,13 @@ int main() {
             lnx::this_thread::yield();
         }
     }
-    std::printf("[main] %d worker(s) running\n", cfg.worker_count);
+    std::printf("[main] %d worker(s) running\n", roster::k_worker_count);
 
     // (6) Workers are live -> start the acceptor. The handoff producer only
-    //     comes online after its consumers (workers) are ready.
-    handle_acceptor acceptor{cfg};
-    acceptor.install_mailboxes(&to_worker, &from_worker);
+    //     comes online after its consumers (workers) are ready. The acceptor is
+    //     the mesh hub, so it takes the whole edge array, not a single pair.
+    acceptor_ctl acceptor{cfg};
+    acceptor.install_pipes(to_worker, from_worker);
     acceptor.start();
     while (!acceptor.is_running()) {
         lnx::this_thread::yield();

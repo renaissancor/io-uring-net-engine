@@ -93,7 +93,7 @@ TEST_CASE("session_table: allocate returns nullptr when full", "[app][session_ta
     session_table t;
     u32 n = 0;
     while (t.allocate(1) != nullptr) ++n;
-    REQUIRE(n == app::config::k_max_sessions);
-    REQUIRE(t.count() == app::config::k_max_sessions);
+    REQUIRE(n == app::config::k_session_capacity);
+    REQUIRE(t.count() == app::config::k_session_capacity);
     REQUIRE(t.allocate(1) == nullptr);   // stays refused
 }
