@@ -32,7 +32,9 @@
 // ---------------------------------------------------------------- protocol
 
 // 4-byte header, then payload. Little-endian; we assume x86 and do not swap,
-// which is exactly the shortcut the real project takes with its 8-byte header.
+// which is exactly the shortcut the real project takes. Its header is 4 bytes
+// too — [uint16 size][uint16 id] — and differs only in that `size` counts the
+// header while `len` here does not. See README § Protocol.
 struct wire_header {
     uint16_t len;   // payload bytes, NOT including this header
     uint16_t type;

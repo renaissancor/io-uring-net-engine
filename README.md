@@ -39,144 +39,56 @@ python3 client.py slowreader --clients 8 --messages 300
 | `slowreader` | `[drop] fd=7 send buffer over cap (261770 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
 
-## loadgen — connection scale
+## Load testing lives in `netbench`
 
-`loadgen.cpp` is the C++ load generator. Unlike the rest of this repo it is
-**not throwaway**: it has to measure the io_uring server too, so the framing
-constants are parameterised rather than hardcoded. When this study build is
-deleted, `loadgen.cpp` moves to `iouring-net-server`.
-
-Single-threaded on purpose. Scale out with processes and machines, not
-threads — same core scaling, no shared state, and it forces the multi-box
-design from day one.
+The load generator was extracted to [`~/code/netbench`](../netbench) once it
+became clear it had to outlive this repo. This one is marked for deletion, and
+the baseline numbers are the whole reason the io_uring port has a target to
+beat.
 
 ```bash
-make loadgen
-CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000
-./loadgen --conns 10000 --per-room 10 --rate 1 --duration 10
-./loadgen --conns 40000 --per-room 10 --src-ips 4 --rate 1 --duration 20
-```
-
-### Verified results
-
-| run | result |
-|---|---|
-| 10k conns, 1 source IP | 10,000 established, 0 failed, 0.10s, 0 attrition over 10s |
-| 40k conns, 1 source IP | **28,232 established, 11,768 × `EADDRNOTAVAIL`** |
-| 40k conns, 4 source IPs | 40,000 established, 0 failed, 0.45s, 0 attrition over 20s |
-| `load` 30×30 after the above | 27,495 frames — no regression from the server changes |
-
-Server RSS at 40k held connections: ~17.8 MB (~450 B/conn userspace). Kernel
-socket buffers are not in RSS; that is the number that actually scales, hence
-the small `SO_RCVBUF`/`SO_SNDBUF` defaults on both sides.
-
-### What the numbers say
-
-**28,232 is not a coincidence.** `net.ipv4.ip_local_port_range` is
-`32768 60999`, and `60999 - 32768 + 1 = 28232`. A connection is identified by
-the 4-tuple `(src IP, src port, dst IP, dst port)`; against a single server
-`IP:port` the last two are fixed, so one source IP can only produce as many
-distinct tuples as it has ephemeral ports.
-
-This is a **client-side** limit and always was. The server's local port stays
-9000 for every connection — `accept()` returns a new fd, not a new port — so
-the server side varies `(src IP, src port)` and is bounded by fds and memory,
-not ports. Switching to UDP would not have changed this in either direction.
-
-Ephemeral ports are a per-source-IP kernel resource, so extra *processes* on
-one box do not buy extra ports. `--src-ips` binds across 127.0.0.1..n (Linux
-treats all of 127.0.0.0/8 as local); past that it takes more machines.
-
-Three things that had to be right before any of this worked:
-
-- **`RLIMIT_NOFILE`** on *both* sides. The 1024 default means the run dies at
-  the 1024th connection, and on the server it reaches the EMFILE livelock of
-  lesson 6 nine thousand connections early.
-- **`SO_LINGER{1,0}`** on the client. The active closer eats TIME_WAIT, and
-  that is the load generator: 28k sockets held for 60s means the *next* run
-  fails for no visible reason. The runs above are back-to-back with no wait.
-  A real client must never do this — RST discards the send buffer.
-- **Room sharding.** Join broadcasts a notice to the room, so N clients in one
-  room is O(N²) frames. 40k in a single room is 800M notices and the connect
-  phase never finishes. `--per-room` keeps fan-out out of a connection-scale
-  test; fan-out is a separate experiment with its own knob.
-
-## The baseline number
-
-This is what the whole exercise was for: the number io_uring has to beat.
-
-```bash
+cd ~/code/netbench && make
+CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000     # here
 ./loadgen --conns 10000 --per-room 10 --rate 6 --duration 12
 ```
 
-Each message is broadcast to its room, so delivered messages per second is
-`conns × rate × per-room`. Server is single-threaded, so one core is the
-ceiling. Loopback, same machine.
+Two environment knobs exist for it:
 
-| rate | delivered/s | server CPU | latency p50 | latency p99 | self-lag p99 |
-|---:|---:|---:|---:|---:|---:|
-| 1 | 100k | — | 0.022 ms | 0.152 ms | 0.011 ms |
-| 5 | 500k | 78.5% | 0.022 ms | 13.0 ms | 0.034 ms |
-| 6 | 600k | 93.2% | 0.026 ms | 13.4 ms | 0.042 ms |
-| 7 | 700k | **99.7%** | **45.4 ms** | 176.6 ms | 0.426 ms |
-| 8 | 800k | 100% | 142.3 ms | 371.2 ms | 0.603 ms |
-| 10 | 1.0M | 100% | 276.4 ms | 735.4 ms | 0.936 ms |
-| 14 | 1.4M | 100% | 446.5 ms | >1000 ms | 1.499 ms |
+- `CHAT_MAX_CONNS` raises the connection cap from its 4096 default. The server
+  also raises its own `RLIMIT_NOFILE` to match — without that the cap just
+  trades a polite refusal for lesson 6's EMFILE livelock nine thousand
+  connections early.
+- `CHAT_QUIET=1` suppresses the per-accept log line. Above a few thousand
+  connections that line is a syscall per accept on line-buffered stdout, and
+  it makes the server look slow when the measurement is really measuring
+  `printf`.
 
-**The knee is at ~600–700k deliveries/s, and it is exactly where one core
-runs out.** p50 goes from 26 µs to 45 ms — a factor of 1700 — for a 17%
-increase in offered load. Nothing was dropped and no connection was lost at
-any rate; the server degrades by queueing, not by failing.
+### The result worth carrying forward
 
-Self-lag stays two to three orders of magnitude below latency throughout, so
-none of these rows are measuring the load generator. That check is not
-decoration: without it the rate-14 row is indistinguishable from a client that
-was simply too slow to keep up, and reporting it as a server result would have
-been wrong.
+This server knees at **~600–700k deliveries/s**, exactly where one core runs
+out: a 17% increase in offered load moves p50 from 26 µs to 45 ms. Nothing
+drops and no connection is lost — it degrades by queueing, not by failing.
 
-### Where the time actually goes
-
-Sampled at rate 6, the saturation point:
-
-```
-user   0.42s   ( 7.0% of wall)
-sys    5.09s   (84.8% of wall)
-split: 8% user / 92% kernel
-```
-
-**92% of the server's CPU is kernel time.** At 600k deliveries/s that is
-essentially one `send()` per delivery plus the `recv()` and `epoll_wait()`
-traffic around it — the application logic (framing, room lookup, string
-assembly) accounts for 8%.
-
-This is the entire argument for the io_uring port, and it is now measured
-rather than assumed: the cost being attacked is syscall transitions, and 92%
-of the budget sits in the part io_uring can batch. It also sets the honest
-ceiling — even a perfect result cannot recover more than that 92%, and the 8%
-of userspace work does not go away.
-
-The same measurement is the first thing to re-run against the io_uring server.
-If its user/kernel split does not move, the port did not do what it was for.
-
-### Caveats on these numbers
-
-- Loopback only. No NIC, no driver path, and client and server share the CPU.
-- The histogram tops out at 1 s. Rows where p99 shows `>1000 ms` have samples
-  excluded, which is also why rate 20 reports a *lower* p50 than rate 14 —
-  past saturation the percentiles stop being comparable.
-- Steady-state connections, not churn. Repeated connect/disconnect is a
-  different and harder workload that this does not touch.
-- `--size-mix` (rotating 16/32/256/1000-byte payloads) exists but the table
-  above is fixed 64-byte filler.
+At that saturation point it spends **92% of its CPU in kernel time** and 8% in
+application logic. That is the argument for the io_uring port measured rather
+than assumed, and also its honest ceiling. Full tables, method, and caveats
+are in `netbench/README.md`.
 
 ## Protocol
 
-4-byte header, little-endian, no byte swapping (same shortcut the real project
-takes with its 8-byte header).
+4-byte header, little-endian, no byte swapping — the same shortcut the real
+project takes.
 
 ```
 struct { uint16_t len; uint16_t type; }   // len = payload bytes, header excluded
 ```
+
+The real project's header (`iouring-net-server/docs/04-protocol.md`) is also
+4 bytes, `[uint16 size][uint16 id]`, and differs in exactly one respect:
+**`size` counts the header, `len` does not.** The width is the same; the
+inclusive/exclusive convention is the whole porting seam, and it is what
+`netbench --proto` switches. An earlier note here claimed the real project
+used an 8-byte header — the protocol doc is authoritative and says otherwise.
 
 | type | direction | meaning |
 |---|---|---|

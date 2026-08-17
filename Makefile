@@ -14,9 +14,7 @@ run: server
 	./server 9000
 
 clean:
-	rm -f server loadgen
+	rm -f server
 
 .PHONY: all run release clean
 
-loadgen: loadgen.cpp
-	$(CXX) $(CXXFLAGS) -O2 -o $@ $<
