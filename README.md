@@ -1,14 +1,28 @@
 # netbench
 
-Load generator for the chat/game servers in `epoll-chat-study`,
-`iouring-net-lib`, and `iouring-net-server`. Measures connection scale and
-delivery latency, and says out loud when a run measured the client instead of
-the server.
+Client-side tools for the chat/game servers in `epoll-chat-study`,
+`iouring-net-lib`, and `iouring-net-server`. Two of them, and the split
+between them is the point:
+
+| | | |
+|---|---|---|
+| `loadgen.cpp` | **instrument** | connection scale and delivery latency, and it says out loud when a run measured the client instead of the server |
+| `chatcli.py` | **judge** | whether the messages are *correct* — right body, right sender, right room, exactly once |
+
+They do not overlap. `loadgen` embeds a 16-byte blob, reads the timestamp back
+out and discards the rest, so it will happily report 100% delivery at a 0.1 ms
+p99 while every message arrives at the wrong client with the wrong body.
+Nothing it measures can catch that. `chatcli.py verify` exists for exactly
+that gap, and `chatcli.py interactive` is the human-eyeball version of the
+same question.
+
+Neither has any performance requirement in the judging role, which is why one
+is C++ and the other is Python.
 
 ## Why this is its own repo
 
-It is a **measuring instrument, not a product**, and it has to survive the
-things it measures.
+These are **tools, not products**, and they have to survive the things they
+point at.
 
 - `epoll-chat-study` is explicitly throwaway. Anything durable that lives
   there dies with it — including the baseline numbers below, which exist
@@ -16,10 +30,10 @@ things it measures.
 - `iouring-net-lib` bans the STL (`std::function`, exceptions, streams,
   `std::` sync types; `sds::` containers instead). A load generator has no
   reason to obey that, and obeying it would mean a rewrite for nothing.
-- An instrument that lives inside one of the two things it compares makes the
+- A tool that lives inside one of the two things it compares makes the
   comparison harder to justify than it should be.
 
-So it lives outside both, keeps the STL, and switches protocols with a flag.
+So they live outside both, keep the STL, and switch protocols with a flag.
 
 ## Build and run
 
@@ -28,11 +42,49 @@ make
 ./loadgen --conns 10000 --per-room 10 --rate 6 --duration 12
 ./loadgen --conns 40000 --src-ips 4 --rate 1 --duration 20
 ./loadgen --help
+
+python3 chatcli.py interactive --nick alice --room lobby
+python3 chatcli.py verify --clients 8 --messages 20
+python3 chatcli.py dribble
+python3 chatcli.py slowreader --clients 8 --messages 300
 ```
+
+Both take `--proto study|iouring`.
 
 `make asan` builds a sanitised binary for correctness checks at small
 `--conns`. Do not measure with it — ASan roughly halves throughput, so the
 numbers describe the sanitiser.
+
+## chatcli modes
+
+| mode | what it answers |
+|---|---|
+| `interactive` | does this behave like a chat server to a human |
+| `verify` | does every message reach every room member exactly once, with the exact body and correct sender |
+| `load` | frame counting only — delivery, not content |
+| `slowreader` | does a client that never reads get dropped without taking the server down |
+| `dribble` | does the parser survive frames split one byte per `send()` |
+
+`verify` varies payload length across 8/63/64/65/200/900 bytes so framing
+boundaries get exercised rather than one comfortable size, and it checks for
+three distinct failures a throughput test reports as a clean 100%: messages
+that never arrived, messages delivered twice, and bodies or senders that do
+not match anything that was sent.
+
+`dribble` matters more for the io_uring port than it looks. The partial-frame
+state machine is one of the things that ports verbatim, and there it has to
+survive completion semantics on top — a buffer handed to the kernel is
+untouchable until the CQE arrives.
+
+### Verified against the epoll server
+
+| mode | result |
+|---|---|
+| `verify` 8×20 | 1,280/1,280 deliveries, exact bodies, 0 missing / 0 duplicate / 0 misattributed |
+| `verify` with wrong `--proto` | 80/80 missing, `VERIFY FAIL` — fails loudly rather than plausibly |
+| `dribble` | server reassembled frames split one byte per send |
+| `load` 30×30 | 27,495 frames, matching the study repo's recorded result |
+| `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stayed responsive to a fresh client |
 
 ## Protocol
 
