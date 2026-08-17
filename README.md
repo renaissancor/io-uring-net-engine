@@ -15,17 +15,21 @@ deleted.
 ```bash
 make                 # ASan + UBSan build (default; keep it this way)
 ./server 9000
-
-python3 client.py interactive --nick alice --room lobby
 ```
 
 ## Test modes
 
+The clients live in [`~/code/netbench`](../netbench) — both of them, for the
+same reason: this repo is marked for deletion and they have to outlive it.
+
 ```bash
-python3 client.py dribble                       # frames split one byte per send
-python3 client.py load --clients 30 --messages 30
-CHAT_SNDBUF=8192 ./server 9000                  # then:
-python3 client.py slowreader --clients 8 --messages 300
+cd ~/code/netbench
+python3 chatcli.py interactive --nick alice --room lobby
+python3 chatcli.py verify  --clients 8  --messages 20    # content correctness
+python3 chatcli.py dribble                               # one byte per send
+python3 chatcli.py load    --clients 30 --messages 30
+CHAT_SNDBUF=8192 ./server 9000                           # then:
+python3 chatcli.py slowreader --clients 8 --messages 300
 ```
 
 `CHAT_SNDBUF` exists because of a real trap — see lesson 7.
@@ -35,16 +39,19 @@ python3 client.py slowreader --clients 8 --messages 300
 | test | result |
 |---|---|
 | `dribble` | server reassembles frames split across many `recv()` calls |
+| `verify` 8×20 | 1,280/1,280 deliveries, exact bodies, 0 missing / 0 duplicate / 0 misattributed |
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
-| `slowreader` | `[drop] fd=7 send buffer over cap (261770 B)`, server stays responsive |
+| `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
+| `loadgen` | see `netbench/README.md` — knees at ~600–700k deliveries/s |
 
-## Load testing lives in `netbench`
+## Clients live in `netbench`
 
-The load generator was extracted to [`~/code/netbench`](../netbench) once it
-became clear it had to outlive this repo. This one is marked for deletion, and
-the baseline numbers are the whole reason the io_uring port has a target to
-beat.
+Both the load generator (`loadgen.cpp`) and the interactive/verify client
+(`chatcli.py`) were extracted to [`~/code/netbench`](../netbench). They had to
+leave: this repo is marked for deletion, and both are needed to evaluate the
+io_uring server that replaces it — the baseline numbers exist precisely to be
+compared against later.
 
 ```bash
 cd ~/code/netbench && make
@@ -116,7 +123,7 @@ Marked `LESSON n` in `server.cpp`.
    Arm on partial send, disarm the instant the buffer drains.
 
 4. **TCP is a byte stream, not a message stream.** One `recv()` can yield half
-   a frame, or three and a half. `client.py dribble` proves the parser handles
+   a frame, or three and a half. `chatcli.py dribble` proves the parser handles
    it.
 
 5. **Never `close()` mid-iteration.** Mark doomed, reap after the tick. Closing
