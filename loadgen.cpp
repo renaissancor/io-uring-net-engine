@@ -1,9 +1,8 @@
-// loadgen.cpp — connection-scale load generator for the epoll chat server.
+// loadgen.cpp — load generator for the epoll chat server.
 //
-// PHASE 1 ONLY. This establishes N connections, joins them to rooms, drains
-// whatever the server sends, and holds. It does NOT yet send chat traffic or
-// measure latency; that is phase 2 and it needs the coordinated-omission
-// handling described at the bottom of this file.
+// Phase 1: establish N connections, shard them across rooms, hold.
+// Phase 2: open-loop message traffic with a delivery-latency histogram and a
+//          client self-lag histogram beside it.
 //
 // Unlike server.cpp, this file is NOT throwaway. It has to outlive
 // epoll-chat-study and measure the io_uring server too, which is why the
@@ -13,11 +12,11 @@
 // Single-threaded on purpose. Scale out with processes and machines, not
 // threads: same core scaling, no shared state, and it forces the multi-box
 // design from day one. Note that extra processes on one box do NOT buy extra
-// ephemeral ports — those are per source IP, kernel-wide. Hence --src-ips.
+// ephemeral ports — those are a per-source-IP resource. Hence --src-ips.
 //
 //   make loadgen
-//   ./loadgen --conns 10000 --per-room 10
-//   ./loadgen --conns 30000 --src-ips 4      # needs 127.0.0.2..4 to be up
+//   ./loadgen --conns 10000 --per-room 10 --rate 1 --duration 10
+//   ./loadgen --conns 40000 --src-ips 4 --rate 2 --duration 20
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -27,6 +26,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -38,15 +38,28 @@
 #include <string>
 #include <vector>
 
+// Added in Linux 4.2 for exactly this use case; guard so the file still builds
+// on older headers.
+#ifndef IP_BIND_ADDRESS_NO_PORT
+#define IP_BIND_ADDRESS_NO_PORT 24
+#endif
+
 // ------------------------------------------------------------------- wire
 //
 // Mirrors server.cpp: 4-byte little-endian header, no byte swapping, payload
 // length excludes the header. Kept as constants so the 8-byte header of the
 // real project is a two-line change rather than a rewrite.
 
-static constexpr size_t k_len_bytes  = 2;
-static constexpr size_t k_type_bytes = 2;
+static constexpr size_t k_len_bytes   = 2;
+static constexpr size_t k_type_bytes  = 2;
 static constexpr size_t k_header_size = k_len_bytes + k_type_bytes;
+
+// server.cpp caps a payload at 1024 and silently drops anything larger. What
+// it broadcasts is "nick: " + our blob, so our own budget is smaller than
+// 1024 by the length of that prefix. Leave room for a 6-digit nick.
+static constexpr size_t k_max_payload  = 1024;
+static constexpr size_t k_prefix_slack = 16;
+static constexpr size_t k_max_blob     = k_max_payload - k_prefix_slack;
 
 enum : uint16_t {
     c_set_nick = 1,
@@ -57,29 +70,50 @@ enum : uint16_t {
     s_chat     = 101,
 };
 
-static void put_frame(std::string& out, uint16_t type, const std::string& payload)
+// Our chat payload. The timestamp is the INTENDED send time, not the actual
+// one — see the scheduling comment in run_traffic().
+//
+//   [8B intended_ts_ns][4B seq][4B client_id][filler ...]
+static constexpr size_t k_blob_header = 16;
+
+static void put_frame(std::string& out, uint16_t type, const char* data, size_t len)
 {
-    const auto len = static_cast<uint16_t>(payload.size());
+    const auto n = static_cast<uint16_t>(len);
     char hdr[k_header_size];
-    std::memcpy(hdr, &len, sizeof(len));
+    std::memcpy(hdr, &n, sizeof(n));
     std::memcpy(hdr + k_len_bytes, &type, sizeof(type));
     out.append(hdr, sizeof(hdr));
-    out.append(payload);
+    out.append(data, len);
+}
+
+static void put_frame(std::string& out, uint16_t type, const std::string& payload)
+{
+    put_frame(out, type, payload.data(), payload.size());
 }
 
 // ------------------------------------------------------------------ config
 
 struct config {
-    std::string host        = "127.0.0.1";
-    uint16_t    port        = 9000;
-    int         conns       = 10000;
-    int         per_room    = 10;
-    int         src_ips     = 1;      // binds 127.0.0.1 .. 127.0.0.<src_ips>
-    int         inflight    = 256;    // concurrent connects in flight
-    int         rcvbuf      = 8192;   // 0 = leave kernel default
-    int         sndbuf      = 8192;   // 0 = leave kernel default
-    int         hold_secs   = 0;      // 0 = hold until SIGINT
+    std::string host      = "127.0.0.1";
+    uint16_t    port      = 9000;
+    int         conns     = 10000;
+    int         per_room  = 10;
+    int         src_ips   = 1;
+    int         inflight  = 256;
+    int         rcvbuf    = 8192;
+    int         sndbuf    = 8192;
+    double      rate      = 1.0;   // messages/sec per connection; 0 = no traffic
+    int         duration  = 10;    // seconds of traffic
+    int         size      = 64;    // filler bytes per message
+    bool        size_mix  = false; // rotate through the size classes instead
 };
+
+// Fixed strings per size class, not per-message RNG: generating randomness in
+// the hot loop burns client CPU and that cost lands in the measurement.
+// Content is irrelevant — TCP does not compress — but length class is not,
+// since small frames are syscall-bound and frames over the MSS take the
+// segmentation path.
+static const int k_size_classes[] = {16, 32, 256, 1000};
 
 // ------------------------------------------------------------------- state
 
@@ -87,8 +121,10 @@ enum class conn_state : uint8_t { none, connecting, ready, dead };
 
 struct conn {
     conn_state  state = conn_state::none;
-    int         index = -1;    // logical client id, for nick/room
-    std::string pending;       // unsent tail of the join handshake
+    int         index = -1;   // logical client id, for nick/room
+    uint32_t    seq   = 0;
+    std::string pending;      // unsent tail
+    std::string in;           // accumulated recv bytes, may hold a partial frame
 };
 
 static volatile sig_atomic_t g_stop = 0;
@@ -99,6 +135,84 @@ static int64_t now_ns()
     timespec ts{};
     ::clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+}
+
+// --------------------------------------------------------------- histogram
+//
+// Fixed 1us buckets out to 1s. Four megabytes and exact within its range,
+// which beats an approximate log-bucket scheme at this scale for the trouble
+// it saves. Anything past 1s lands in the overflow count and is reported
+// separately rather than being quietly clamped into the top bucket.
+
+struct histogram {
+    static constexpr int64_t bucket_ns = 1000;      // 1us
+    static constexpr size_t  buckets   = 1000000;   // -> 1s
+
+    std::vector<uint32_t> counts = std::vector<uint32_t>(buckets, 0);
+    uint64_t total    = 0;
+    uint64_t overflow = 0;
+    int64_t  max_ns   = 0;
+    int64_t  min_ns   = INT64_MAX;
+
+    void add(int64_t ns)
+    {
+        if (ns < 0) ns = 0;   // clock skew or a same-tick delivery
+        ++total;
+        if (ns > max_ns) max_ns = ns;
+        if (ns < min_ns) min_ns = ns;
+        const size_t b = static_cast<size_t>(ns / bucket_ns);
+        if (b >= buckets) { ++overflow; return; }
+        ++counts[b];
+    }
+
+    // Percentile in nanoseconds. Overflow entries are the largest samples, so
+    // a percentile that falls inside them is reported as "beyond range"
+    // rather than invented.
+    int64_t pct(double p, bool& beyond) const
+    {
+        beyond = false;
+        if (total == 0) return 0;
+        const uint64_t want = static_cast<uint64_t>(p * static_cast<double>(total));
+        uint64_t seen = 0;
+        for (size_t b = 0; b < buckets; ++b) {
+            seen += counts[b];
+            if (seen >= want)
+                return static_cast<int64_t>(b) * bucket_ns;
+        }
+        beyond = true;
+        return static_cast<int64_t>(buckets) * bucket_ns;
+    }
+};
+
+static void print_histogram(const char* label, const histogram& h)
+{
+    if (h.total == 0) {
+        std::printf("  %-18s (no samples)\n", label);
+        return;
+    }
+    auto ms = [](int64_t ns) { return static_cast<double>(ns) / 1e6; };
+    bool b50 = false, b90 = false, b99 = false, b999 = false, b9999 = false;
+    const int64_t p50   = h.pct(0.50,   b50);
+    const int64_t p90   = h.pct(0.90,   b90);
+    const int64_t p99   = h.pct(0.99,   b99);
+    const int64_t p999  = h.pct(0.999,  b999);
+    const int64_t p9999 = h.pct(0.9999, b9999);
+
+    std::printf("  %-18s n=%llu  min=%.3fms  p50=%.3f%s  p90=%.3f%s  "
+                "p99=%.3f%s  p99.9=%.3f%s  p99.99=%.3f%s  max=%.3fms\n",
+                label,
+                static_cast<unsigned long long>(h.total),
+                ms(h.min_ns == INT64_MAX ? 0 : h.min_ns),
+                ms(p50),   b50   ? "+" : "",
+                ms(p90),   b90   ? "+" : "",
+                ms(p99),   b99   ? "+" : "",
+                ms(p999),  b999  ? "+" : "",
+                ms(p9999), b9999 ? "+" : "",
+                ms(h.max_ns));
+    if (h.overflow)
+        std::printf("  %-18s %llu samples over 1s (excluded from percentiles, "
+                    "shown as '+')\n", "",
+                    static_cast<unsigned long long>(h.overflow));
 }
 
 // ------------------------------------------------------------------ limits
@@ -131,19 +245,31 @@ static bool raise_fd_limit(rlim_t want, rlim_t& got)
 
 // -------------------------------------------------------------- connecting
 
-// Source IPs are round-robined across connections. Ephemeral ports are a
-// per-source-IP resource (~28k by default, net.ipv4.ip_local_port_range), so
-// one source IP caps a single-destination run at roughly that many sockets
-// no matter how many processes you run. Linux treats all of 127.0.0.0/8 as
-// local, so 127.0.0.2+ are free extra budget on loopback.
+// Source IPs are round-robined across connections. A connection is identified
+// by the 4-tuple (src IP, src port, dst IP, dst port); against a single
+// server IP:port the last two are fixed, so one source IP yields only as many
+// tuples as it has ephemeral ports (~28k by default,
+// net.ipv4.ip_local_port_range). Adding source IPs opens another field in the
+// tuple. Linux treats all of 127.0.0.0/8 as local, so 127.0.0.2+ are free
+// extra budget on loopback.
 static bool bind_source(int fd, const config& cfg, int index)
 {
     if (cfg.src_ips <= 1)
-        return true;
+        return true;   // no bind at all: connect() autobinds, 4-tuple aware
+
+    // Without this, bind() has to pick the port immediately — and at bind time
+    // the kernel does not know the destination yet, so it can only guarantee
+    // uniqueness on (src IP, src port) rather than on the full 4-tuple. That
+    // caps a bound socket at the ephemeral range per source IP even when the
+    // destinations differ. IP_BIND_ADDRESS_NO_PORT says "fix the address, let
+    // connect() choose the port", restoring 4-tuple-aware allocation. It
+    // exists for load generators and proxies specifically.
+    const int one = 1;
+    ::setsockopt(fd, IPPROTO_IP, IP_BIND_ADDRESS_NO_PORT, &one, sizeof(one));
 
     sockaddr_in src{};
     src.sin_family = AF_INET;
-    src.sin_port   = 0;  // let the kernel pick the ephemeral port
+    src.sin_port   = 0;
     const std::string ip = "127.0.0." + std::to_string(1 + (index % cfg.src_ips));
     if (::inet_pton(AF_INET, ip.c_str(), &src.sin_addr) != 1)
         return false;
@@ -151,7 +277,6 @@ static bool bind_source(int fd, const config& cfg, int index)
     return ::bind(fd, reinterpret_cast<sockaddr*>(&src), sizeof(src)) == 0;
 }
 
-// Returns the fd on success (connect in progress or complete), -1 on failure.
 static int start_connect(const config& cfg, const sockaddr_in& dst, int index, int& out_errno)
 {
     const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -165,14 +290,17 @@ static int start_connect(const config& cfg, const sockaddr_in& dst, int index, i
     if (cfg.sndbuf > 0)
         ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &cfg.sndbuf, sizeof(cfg.sndbuf));
 
+    // Nagle would coalesce small frames and hold them for up to 40ms, which
+    // would be indistinguishable from server latency in the histogram. The
+    // server sets this on its accepted sockets too; one side is not enough.
     const int one = 1;
     ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
     // SO_LINGER{1,0} makes close() send RST instead of FIN. The active closer
-    // is the side that eats TIME_WAIT, and that is us: 10k sockets sitting in
+    // is the side that eats TIME_WAIT, and that is us: 28k sockets sitting in
     // TIME_WAIT for 60s exhausts the ephemeral range and the *next* run fails
-    // for no visible reason. A load harness wants the RST; a real client
-    // never should, because it discards anything still in the send buffer.
+    // for no visible reason. A load harness wants the RST; a real client never
+    // should, because it discards anything still in the send buffer.
     linger lg{1, 0};
     ::setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
 
@@ -191,29 +319,13 @@ static int start_connect(const config& cfg, const sockaddr_in& dst, int index, i
     return fd;
 }
 
-// ---------------------------------------------------------------- draining
+// -------------------------------------------------------------------- io
 
-// Phase 1 does not parse replies, but it must still read them. The server
-// caps its per-connection pending buffer at 256 KB and drops whoever exceeds
-// it, so a client that never reads gets disconnected by backpressure and the
-// run looks like a server failure. Read and discard.
 static char g_scratch[65536];
 
-static bool drain(int fd, uint64_t& bytes_in)
-{
-    for (;;) {
-        const ssize_t n = ::recv(fd, g_scratch, sizeof(g_scratch), 0);
-        if (n > 0) { bytes_in += static_cast<uint64_t>(n); continue; }
-        if (n == 0) return false;                       // peer closed
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
-        if (errno == EINTR) continue;
-        return false;
-    }
-}
-
 // Sends as much of c.pending as the kernel will take. Returns false on a hard
-// error. A partial send is normal and not an error: the tail stays in
-// c.pending and EPOLLOUT stays armed.
+// error. A partial send is normal: the tail stays in c.pending and the caller
+// keeps EPOLLOUT armed.
 static bool flush_pending(int fd, conn& c)
 {
     while (!c.pending.empty()) {
@@ -226,48 +338,319 @@ static bool flush_pending(int fd, conn& c)
     return true;
 }
 
+// Pulls everything available into c.in. Returns false when the peer closed or
+// the socket errored.
+static bool read_available(int fd, conn& c, uint64_t& bytes_in)
+{
+    for (;;) {
+        const ssize_t n = ::recv(fd, g_scratch, sizeof(g_scratch), 0);
+        if (n > 0) {
+            bytes_in += static_cast<uint64_t>(n);
+            c.in.append(g_scratch, static_cast<size_t>(n));
+            continue;
+        }
+        if (n == 0) return false;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
+        if (errno == EINTR) continue;
+        return false;
+    }
+}
+
+// Consumes complete frames from c.in and records a latency sample for every
+// s_chat frame that carries one of our blobs.
+//
+// The server broadcasts "nick: " + blob, so the blob starts after the first
+// ": ". Finding it by scan rather than by assuming a fixed nick width keeps
+// this working when the client count changes the nick length.
+static void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
+                           uint64_t& frames_in, uint64_t& samples_bad)
+{
+    size_t off = 0;
+    while (c.in.size() - off >= k_header_size) {
+        uint16_t len = 0, type = 0;
+        std::memcpy(&len,  c.in.data() + off, sizeof(len));
+        std::memcpy(&type, c.in.data() + off + k_len_bytes, sizeof(type));
+
+        if (c.in.size() - off < k_header_size + len)
+            break;   // partial frame; wait for more bytes
+
+        const char* payload = c.in.data() + off + k_header_size;
+        off += k_header_size + len;
+        ++frames_in;
+
+        if (type != s_chat || len < k_blob_header)
+            continue;
+
+        const char* sep = static_cast<const char*>(
+            std::memchr(payload, ':', len));
+        if (!sep || (sep + 2) > (payload + len)) { ++samples_bad; continue; }
+        const char*  blob     = sep + 2;           // skip ": "
+        const size_t blob_len = static_cast<size_t>((payload + len) - blob);
+        if (blob_len < k_blob_header) { ++samples_bad; continue; }
+
+        int64_t intended = 0;
+        std::memcpy(&intended, blob, sizeof(intended));
+
+        // The timestamp is the intended send time, so this subtraction already
+        // includes any delay the client itself introduced. That is the point:
+        // measuring from the actual send time would delete exactly the samples
+        // where something went wrong. See run_traffic().
+        lat.add(recv_ts - intended);
+    }
+    if (off) c.in.erase(0, off);
+}
+
 // -------------------------------------------------------------------- args
 
 static void usage()
 {
     std::printf(
         "usage: loadgen [options]\n"
-        "  --host <ip>        server address        (default 127.0.0.1)\n"
-        "  --port <n>         server port           (default 9000)\n"
-        "  --conns <n>        connections to open   (default 10000)\n"
-        "  --per-room <n>     clients per room      (default 10)\n"
+        "  --host <ip>        server address           (default 127.0.0.1)\n"
+        "  --port <n>         server port              (default 9000)\n"
+        "  --conns <n>        connections to open      (default 10000)\n"
+        "  --per-room <n>     clients per room         (default 10)\n"
         "  --src-ips <n>      bind across 127.0.0.1..n (default 1)\n"
-        "  --inflight <n>     concurrent connects   (default 256)\n"
-        "  --rcvbuf <bytes>   SO_RCVBUF, 0=default  (default 8192)\n"
-        "  --sndbuf <bytes>   SO_SNDBUF, 0=default  (default 8192)\n"
-        "  --hold <secs>      hold then exit, 0=until SIGINT (default 0)\n");
+        "  --inflight <n>     concurrent connects      (default 256)\n"
+        "  --rcvbuf <bytes>   SO_RCVBUF, 0=default     (default 8192)\n"
+        "  --sndbuf <bytes>   SO_SNDBUF, 0=default     (default 8192)\n"
+        "  --rate <msg/s>     per connection, 0=none   (default 1)\n"
+        "  --duration <secs>  traffic duration         (default 10)\n"
+        "  --size <bytes>     filler per message       (default 64)\n"
+        "  --size-mix         rotate 16/32/256/1000 instead of --size\n");
 }
 
 static bool parse_args(int argc, char** argv, config& cfg)
 {
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        auto next = [&](int& dst) {
+        auto next_int = [&](int& dst) {
             if (i + 1 >= argc) return false;
             dst = std::atoi(argv[++i]);
             return true;
         };
         if      (a == "--host" && i + 1 < argc) cfg.host = argv[++i];
         else if (a == "--port" && i + 1 < argc) cfg.port = static_cast<uint16_t>(std::atoi(argv[++i]));
-        else if (a == "--conns")    { if (!next(cfg.conns))    return false; }
-        else if (a == "--per-room") { if (!next(cfg.per_room)) return false; }
-        else if (a == "--src-ips")  { if (!next(cfg.src_ips))  return false; }
-        else if (a == "--inflight") { if (!next(cfg.inflight)) return false; }
-        else if (a == "--rcvbuf")   { if (!next(cfg.rcvbuf))   return false; }
-        else if (a == "--sndbuf")   { if (!next(cfg.sndbuf))   return false; }
-        else if (a == "--hold")     { if (!next(cfg.hold_secs))return false; }
+        else if (a == "--rate" && i + 1 < argc) cfg.rate = std::atof(argv[++i]);
+        else if (a == "--size-mix")  cfg.size_mix = true;
+        else if (a == "--conns")     { if (!next_int(cfg.conns))    return false; }
+        else if (a == "--per-room")  { if (!next_int(cfg.per_room)) return false; }
+        else if (a == "--src-ips")   { if (!next_int(cfg.src_ips))  return false; }
+        else if (a == "--inflight")  { if (!next_int(cfg.inflight)) return false; }
+        else if (a == "--rcvbuf")    { if (!next_int(cfg.rcvbuf))   return false; }
+        else if (a == "--sndbuf")    { if (!next_int(cfg.sndbuf))   return false; }
+        else if (a == "--duration")  { if (!next_int(cfg.duration)) return false; }
+        else if (a == "--size")      { if (!next_int(cfg.size))     return false; }
         else { usage(); return false; }
     }
     if (cfg.conns <= 0 || cfg.per_room <= 0 || cfg.src_ips <= 0 || cfg.inflight <= 0) {
         std::fprintf(stderr, "counts must be positive\n");
         return false;
     }
+    if (cfg.rate < 0 || cfg.duration < 0) {
+        std::fprintf(stderr, "rate and duration must not be negative\n");
+        return false;
+    }
+    if (cfg.size < 0) cfg.size = 0;
+    if (static_cast<size_t>(cfg.size) + k_blob_header > k_max_blob) {
+        cfg.size = static_cast<int>(k_max_blob - k_blob_header);
+        std::fprintf(stderr, "[warn] --size clamped to %d (server payload cap)\n", cfg.size);
+    }
     return true;
+}
+
+// ---------------------------------------------------------------- traffic
+
+struct traffic_stats {
+    histogram latency;    // delivery latency, intended-send to receive
+    histogram self_lag;   // how late this process was issuing a send
+    uint64_t  sent        = 0;
+    uint64_t  frames_in   = 0;
+    uint64_t  bytes_in    = 0;
+    uint64_t  samples_bad = 0;
+    uint64_t  backpressed = 0;   // sends skipped because pending was already full
+    int       lost_conns  = 0;
+};
+
+// Open-loop send scheduling.
+//
+// Every connection sends at the same rate, so instead of a per-connection
+// timer (40k timers is its own performance problem) the schedule is one
+// global sequence: message m belongs to connection m % N and is DUE at
+// start + m * slot, where slot = 1 / (N * rate). That spreads the load evenly
+// across the period instead of firing every connection at once, and it makes
+// "am I behind" a single comparison.
+//
+// The schedule does not depend on replies. Closed-loop sending — wait for the
+// echo, then send again — cannot overload the server: when the server slows,
+// the client slows with it, the queue never builds, and the latency graph
+// comes out flattering and wrong.
+static void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
+                        const config& cfg, traffic_stats& st)
+{
+    if (cfg.rate <= 0 || cfg.duration <= 0 || live.empty())
+        return;
+
+    // Fixed filler, generated once. Not random per message: RNG in the hot
+    // loop is client CPU, and client CPU spent here shows up as server
+    // latency in the results.
+    std::string filler(static_cast<size_t>(std::max(cfg.size, k_size_classes[3])), 'x');
+    for (size_t i = 0; i < filler.size(); ++i)
+        filler[i] = static_cast<char>('a' + (i % 26));
+
+    const size_t  n     = live.size();
+    const int64_t slot  = static_cast<int64_t>(1e9 / (static_cast<double>(n) * cfg.rate));
+    const int64_t start = now_ns();
+    const int64_t end   = start + static_cast<int64_t>(cfg.duration) * 1000000000LL;
+
+    // A single tick that falls far behind must not spin forever trying to
+    // catch up while never servicing reads. Cap the burst; the resulting
+    // lateness is recorded in self_lag rather than hidden.
+    const size_t max_burst = std::max<size_t>(1024, n / 8);
+
+    uint64_t m = 0;              // global message index
+    size_t   class_cursor = 0;
+    std::string blob;
+    blob.reserve(k_max_blob);
+
+    std::printf("[traf] %zu conns x %.2f msg/s for %ds (slot=%lldns, "
+                "target %.0f msg/s)\n",
+                n, cfg.rate, cfg.duration, static_cast<long long>(slot),
+                static_cast<double>(n) * cfg.rate);
+
+    int64_t next_report = start + 5000000000LL;
+
+    while (!g_stop) {
+        const int64_t loop_ts = now_ns();
+        if (loop_ts >= end) break;
+
+        // ---- issue everything that is due ----------------------------
+        size_t burst = 0;
+        for (;;) {
+            const int64_t due = start + static_cast<int64_t>(m) * slot;
+            if (due > loop_ts || burst >= max_burst) break;
+
+            const int fd = live[m % n];
+            conn& c = conns[fd];
+            ++m;
+            ++burst;
+            if (c.state != conn_state::ready) continue;
+
+            // How late this process is issuing the send. This is the number
+            // that separates server queueing from client saturation, and
+            // without it a saturated client reads as a slow server.
+            st.self_lag.add(loop_ts - due);
+
+            // A connection whose pending buffer has not drained is already
+            // backpressured; piling on more would measure our own send queue.
+            if (c.pending.size() > 64 * 1024) { ++st.backpressed; continue; }
+
+            const size_t fill = cfg.size_mix
+                ? static_cast<size_t>(k_size_classes[class_cursor++ % 4])
+                : static_cast<size_t>(cfg.size);
+
+            blob.assign(k_blob_header, '\0');
+            std::memcpy(blob.data(),      &due,     sizeof(due));
+            std::memcpy(blob.data() + 8,  &c.seq,   sizeof(c.seq));
+            std::memcpy(blob.data() + 12, &c.index, sizeof(c.index));
+            blob.append(filler, 0, std::min(fill, k_max_blob - k_blob_header));
+            ++c.seq;
+
+            put_frame(c.pending, c_chat, blob);
+            ++st.sent;
+
+            if (!flush_pending(fd, c)) { c.state = conn_state::dead; continue; }
+            if (!c.pending.empty()) {
+                epoll_event ev{};
+                ev.events  = EPOLLIN | static_cast<uint32_t>(EPOLLOUT);
+                ev.data.fd = fd;
+                ::epoll_ctl(ep, EPOLL_CTL_MOD, fd, &ev);
+            }
+        }
+
+        // ---- service the sockets --------------------------------------
+        //
+        // The timeout is bounded by when the next message comes due, so the
+        // loop neither spins nor oversleeps past a deadline.
+        const int64_t next_due = start + static_cast<int64_t>(m) * slot;
+        int wait_ms = static_cast<int>((next_due - now_ns()) / 1000000);
+        if (wait_ms < 0) wait_ms = 0;
+        if (wait_ms > 10) wait_ms = 10;
+
+        epoll_event evs[4096];
+        const int ready = ::epoll_wait(ep, evs, 4096, wait_ms);
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            std::perror("epoll_wait");
+            break;
+        }
+
+        const int64_t recv_ts = now_ns();
+        for (int i = 0; i < ready; ++i) {
+            const int fd = evs[i].data.fd;
+            conn& c = conns[fd];
+            if (c.state != conn_state::ready) continue;
+
+            bool alive = true;
+            if (evs[i].events & EPOLLOUT) {
+                alive = flush_pending(fd, c);
+                if (alive && c.pending.empty()) {
+                    epoll_event ev{};
+                    ev.events  = EPOLLIN;
+                    ev.data.fd = fd;
+                    ::epoll_ctl(ep, EPOLL_CTL_MOD, fd, &ev);
+                }
+            }
+            if (alive && (evs[i].events & EPOLLIN)) {
+                alive = read_available(fd, c, st.bytes_in);
+                consume_frames(c, recv_ts, st.latency, st.frames_in, st.samples_bad);
+            }
+            if (!alive || (evs[i].events & (EPOLLERR | EPOLLHUP))) {
+                c.state = conn_state::dead;
+                ++st.lost_conns;
+                ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
+                ::close(fd);
+            }
+        }
+
+        if (now_ns() >= next_report) {
+            bool b = false;
+            std::printf("[traf] sent=%llu recv=%llu lag_p99=%.3fms lost=%d\n",
+                        static_cast<unsigned long long>(st.sent),
+                        static_cast<unsigned long long>(st.frames_in),
+                        static_cast<double>(st.self_lag.pct(0.99, b)) / 1e6,
+                        st.lost_conns);
+            next_report = now_ns() + 5000000000LL;
+        }
+    }
+
+    // ---- drain tail ---------------------------------------------------
+    //
+    // Messages in flight when the clock ran out are still real deliveries.
+    // Stopping dead would truncate the slowest samples, which is the same
+    // mistake as coordinated omission wearing a different hat.
+    const int64_t drain_until = now_ns() + 1000000000LL;
+    while (!g_stop && now_ns() < drain_until) {
+        epoll_event evs[4096];
+        const int ready = ::epoll_wait(ep, evs, 4096, 100);
+        if (ready <= 0) { if (ready < 0 && errno == EINTR) continue; else if (ready == 0) continue; else break; }
+        const int64_t recv_ts = now_ns();
+        for (int i = 0; i < ready; ++i) {
+            const int fd = evs[i].data.fd;
+            conn& c = conns[fd];
+            if (c.state != conn_state::ready) continue;
+            if (evs[i].events & EPOLLIN) {
+                if (!read_available(fd, c, st.bytes_in)) {
+                    c.state = conn_state::dead;
+                    ++st.lost_conns;
+                    ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
+                    ::close(fd);
+                    continue;
+                }
+                consume_frames(c, recv_ts, st.latency, st.frames_in, st.samples_bad);
+            }
+        }
+    }
 }
 
 // -------------------------------------------------------------------- main
@@ -280,9 +663,8 @@ int main(int argc, char** argv)
 
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
-    std::signal(SIGPIPE, SIG_IGN);   // belt and braces; sends use MSG_NOSIGNAL
+    std::signal(SIGPIPE, SIG_IGN);
 
-    // Headroom over cfg.conns for the epoll fd, stdio, and slack.
     const rlim_t want = static_cast<rlim_t>(cfg.conns) + 256;
     rlim_t limit = 0;
     raise_fd_limit(want < 65536 ? 65536 : want, limit);
@@ -292,8 +674,6 @@ int main(int argc, char** argv)
     if (limit < want)
         std::printf("[warn] fd limit below target; expect EMFILE near %llu conns\n",
                     static_cast<unsigned long long>(limit));
-
-    // One source IP covers ~28k ephemeral ports to a single destination.
     if (cfg.src_ips == 1 && cfg.conns > 25000)
         std::printf("[warn] %d conns from one source IP is near the ephemeral "
                     "port range; use --src-ips\n", cfg.conns);
@@ -309,32 +689,26 @@ int main(int argc, char** argv)
     const int ep = ::epoll_create1(0);
     if (ep < 0) { std::perror("epoll_create1"); return 1; }
 
-    // Indexed by fd. Cheaper and more predictable than a hash map, and fd
-    // numbers are bounded by the rlimit we just set.
     std::vector<conn> conns(limit + 16);
+    std::vector<int>  live;
+    live.reserve(static_cast<size_t>(cfg.conns));
 
-    int  started = 0, established = 0, failed = 0, inflight = 0;
-    std::map<int, int> fail_reasons;   // errno -> count
+    int started = 0, established = 0, failed = 0, inflight = 0;
+    std::map<int, int> fail_reasons;
 
     const int64_t t0 = now_ns();
 
-    // ---- phase 1a: establish -------------------------------------------
+    // ---- establish -----------------------------------------------------
     //
-    // Connects are paced. Firing 10k SYNs at once overruns the listen backlog
-    // (SOMAXCONN), and the kernel's response to an overflowing accept queue is
-    // to drop SYNs silently — which surfaces as mysterious timeouts rather
-    // than an error, so it is worth not provoking.
+    // Connects are paced. Firing 10k SYNs at once overruns the listen backlog,
+    // and the kernel's response to a full accept queue is to drop SYNs
+    // silently — which surfaces as mysterious timeouts rather than as an error.
 
     while (!g_stop && (established + failed) < cfg.conns) {
         while (inflight < cfg.inflight && started < cfg.conns) {
             int err = 0;
             const int fd = start_connect(cfg, dst, started, err);
-            if (fd < 0) {
-                ++failed;
-                ++fail_reasons[err];
-                ++started;
-                continue;
-            }
+            if (fd < 0) { ++failed; ++fail_reasons[err]; ++started; continue; }
             if (fd >= static_cast<int>(conns.size()))
                 conns.resize(static_cast<size_t>(fd) + 1024);
 
@@ -345,8 +719,7 @@ int main(int argc, char** argv)
             ev.events  = EPOLLOUT;   // writable == connect resolved
             ev.data.fd = fd;
             if (::epoll_ctl(ep, EPOLL_CTL_ADD, fd, &ev) < 0) {
-                ++failed;
-                ++fail_reasons[errno];
+                ++failed; ++fail_reasons[errno];
                 conns[fd] = conn{};
                 ::close(fd);
                 ++started;
@@ -363,8 +736,7 @@ int main(int argc, char** argv)
             std::perror("epoll_wait");
             break;
         }
-        if (n == 0 && inflight == 0 && started >= cfg.conns)
-            break;
+        if (n == 0 && inflight == 0 && started >= cfg.conns) break;
 
         for (int i = 0; i < n; ++i) {
             const int fd = evs[i].data.fd;
@@ -385,20 +757,21 @@ int main(int argc, char** argv)
                 }
 
                 // Room sharding is not cosmetic. Join broadcasts a notice to
-                // the room, so N clients in one room is O(N^2) frames — 10k in
-                // a single room is 50M notices and the server never finishes
-                // the connect phase. Rooms must be small here; fan-out is a
-                // separate experiment with its own knob.
+                // the room, so N clients in one room is O(N^2) frames — 40k in
+                // a single room is 800M notices and the connect phase never
+                // finishes. Fan-out is a separate experiment with its own knob.
                 put_frame(c.pending, c_set_nick, "c" + std::to_string(c.index));
                 put_frame(c.pending, c_join,     "r" + std::to_string(c.index / cfg.per_room));
 
                 c.state = conn_state::ready;
                 --inflight;
                 ++established;
+                live.push_back(fd);
 
                 if (!flush_pending(fd, c)) {
                     ++failed; --established;
                     ++fail_reasons[errno];
+                    live.pop_back();
                     ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
                     c = conn{};
                     ::close(fd);
@@ -407,15 +780,15 @@ int main(int argc, char** argv)
 
                 // EPOLLOUT must not stay armed once there is nothing to write.
                 // A socket is writable almost always, so a permanent EPOLLOUT
-                // spins epoll_wait at 100% CPU — the same trap as server.cpp
-                // lesson 3, and on the client it silently becomes the
-                // bottleneck that makes the server look slow.
+                // spins epoll_wait at 100% CPU — server.cpp lesson 3, and on
+                // the client it silently becomes the bottleneck that makes the
+                // server look slow.
                 epoll_event ev{};
                 ev.events  = EPOLLIN | (c.pending.empty() ? 0u : static_cast<uint32_t>(EPOLLOUT));
                 ev.data.fd = fd;
                 ::epoll_ctl(ep, EPOLL_CTL_MOD, fd, &ev);
 
-                if ((established % 1000) == 0)
+                if ((established % 5000) == 0)
                     std::printf("[conn] %d established (%d failed)\n", established, failed);
                 continue;
             }
@@ -432,12 +805,15 @@ int main(int argc, char** argv)
                         ::epoll_ctl(ep, EPOLL_CTL_MOD, fd, &ev);
                     }
                 }
-                if (alive && (evs[i].events & EPOLLIN))
-                    alive = drain(fd, junk);
+                if (alive && (evs[i].events & EPOLLIN)) {
+                    alive = read_available(fd, c, junk);
+                    c.in.clear();   // join notices; nothing to measure yet
+                }
                 if (!alive || (evs[i].events & (EPOLLERR | EPOLLHUP))) {
                     --established;
                     ++failed;
                     ++fail_reasons[errno ? errno : ECONNRESET];
+                    live.erase(std::find(live.begin(), live.end(), fd));
                     ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
                     c = conn{};
                     ::close(fd);
@@ -447,59 +823,53 @@ int main(int argc, char** argv)
     }
 
     const double secs = static_cast<double>(now_ns() - t0) / 1e9;
-    std::printf("\n[done] established=%d failed=%d in %.2fs (%.0f conn/s)\n",
+    std::printf("\n[conn] established=%d failed=%d in %.2fs (%.0f conn/s)\n",
                 established, failed, secs, secs > 0 ? established / secs : 0.0);
     for (const auto& [err, count] : fail_reasons)
         std::printf("       %6d x %s\n", count, std::strerror(err));
 
-    // ---- phase 1b: hold -------------------------------------------------
-    //
-    // Holding matters: a connection that establishes and is dropped a second
-    // later did not really scale. Keep draining so backpressure never fires,
-    // and report attrition.
+    // Discard whatever the join notices left buffered, so the traffic phase
+    // starts from a clean parse position.
+    for (int fd : live) conns[fd].in.clear();
 
-    if (established > 0 && !g_stop) {
-        std::printf("[hold] draining; ^C to stop%s\n",
-                    cfg.hold_secs > 0 ? "" : " (no timeout)");
-        const int64_t deadline = cfg.hold_secs > 0
-            ? now_ns() + static_cast<int64_t>(cfg.hold_secs) * 1000000000LL
-            : 0;
-        uint64_t bytes_in = 0;
-        int64_t  next_report = now_ns() + 5000000000LL;
+    // ---- traffic --------------------------------------------------------
 
-        while (!g_stop && established > 0) {
-            if (deadline && now_ns() >= deadline) break;
+    traffic_stats st;
+    run_traffic(ep, conns, live, cfg, st);
 
-            epoll_event evs[1024];
-            const int n = ::epoll_wait(ep, evs, 1024, 500);
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                std::perror("epoll_wait");
-                break;
-            }
-            for (int i = 0; i < n; ++i) {
-                const int fd = evs[i].data.fd;
-                conn& c = conns[fd];
-                if (c.state != conn_state::ready)
-                    continue;
-                bool alive = true;
-                if (evs[i].events & EPOLLIN)
-                    alive = drain(fd, bytes_in);
-                if (!alive || (evs[i].events & (EPOLLERR | EPOLLHUP))) {
-                    --established;
-                    ::epoll_ctl(ep, EPOLL_CTL_DEL, fd, nullptr);
-                    c = conn{};
-                    ::close(fd);
-                }
-            }
-            if (now_ns() >= next_report) {
-                std::printf("[hold] alive=%d bytes_in=%llu\n",
-                            established, static_cast<unsigned long long>(bytes_in));
-                next_report = now_ns() + 5000000000LL;
-            }
+    if (cfg.rate > 0 && cfg.duration > 0) {
+        std::printf("\n[stat] sent=%llu frames_in=%llu bytes_in=%llu "
+                    "unparsed=%llu backpressed=%llu lost_conns=%d\n",
+                    static_cast<unsigned long long>(st.sent),
+                    static_cast<unsigned long long>(st.frames_in),
+                    static_cast<unsigned long long>(st.bytes_in),
+                    static_cast<unsigned long long>(st.samples_bad),
+                    static_cast<unsigned long long>(st.backpressed),
+                    st.lost_conns);
+        print_histogram("delivery latency", st.latency);
+        print_histogram("client self-lag",  st.self_lag);
+
+        // The verdict. Latency numbers taken while this process was itself
+        // falling behind describe this process, not the server, and reporting
+        // them without saying so is the classic way to publish a wrong result.
+        bool a = false, b = false;
+        const int64_t lat99 = st.latency.pct(0.99, a);
+        const int64_t lag99 = st.self_lag.pct(0.99, b);
+        if (st.latency.total == 0) {
+            std::printf("[VOID] no latency samples\n");
+        } else if (lag99 * 5 > lat99) {
+            std::printf("[VOID] self-lag p99 (%.3fms) is not small against "
+                        "latency p99 (%.3fms) — this run measured the client, "
+                        "not the server. Lower --rate or --conns, or add "
+                        "processes and machines.\n",
+                        static_cast<double>(lag99) / 1e6,
+                        static_cast<double>(lat99) / 1e6);
+        } else {
+            std::printf("[ OK ] self-lag p99 (%.3fms) is small against latency "
+                        "p99 (%.3fms); the client was not the bottleneck\n",
+                        static_cast<double>(lag99) / 1e6,
+                        static_cast<double>(lat99) / 1e6);
         }
-        std::printf("[exit] alive=%d bytes_in=%llu\n",
-                    established, static_cast<unsigned long long>(bytes_in));
     }
 
     for (size_t fd = 0; fd < conns.size(); ++fd)
@@ -508,41 +878,3 @@ int main(int argc, char** argv)
     ::close(ep);
     return 0;
 }
-
-// ---------------------------------------------------------------- phase 2
-//
-// Not implemented yet. Recorded here so the design decisions survive the gap.
-//
-// Send scheduling must be OPEN-LOOP: each connection gets a fixed next-send
-// deadline (start + n * interval) and fires on schedule regardless of whether
-// the previous reply arrived. Closed-loop send-after-reply cannot overload the
-// server — when the server slows, the client slows with it, queueing never
-// builds, and the latency graph is a flattering lie.
-//
-// Latency must be measured against the INTENDED send time, not the actual
-// one:  latency = recv_time - next_send  (not - actual_send). Otherwise every
-// delay the client itself caused is silently deleted from the histogram, which
-// is exactly where the p99 lives. This is coordinated omission.
-//
-// The payload carries its own timestamp so the receiver can compute delivery
-// latency without clock sync:
-//
-//     [4B len][2B type][8B send_ts_ns][4B seq][4B client_id][... filler ...]
-//
-// Because the chat server broadcasts, what this measures is delivery latency
-// to other room members rather than sender RTT — the more meaningful number
-// for a chat workload. Keeping every simulated client in one process means
-// they share a clock, so the subtraction is valid.
-//
-// Filler comes from fixed strings per size class (16 / 32 / 256 / long), not
-// per-message RNG: generating randomness in the hot loop burns client CPU and
-// that cost lands in the measurement. Content does not matter — TCP does not
-// compress — but length class does, since small frames are syscall-bound and
-// frames over the MSS take the segmentation path.
-//
-// SELF-DIAGNOSIS IS MANDATORY. The loop must also histogram its own
-// scheduling lag (actual wakeup - intended wakeup) and print it beside the
-// latency numbers. Without it there is no way to tell server queueing from
-// client saturation, and the classic failure is reporting "p99 200ms at 100k
-// conns" when the client was the thing dying. If lag p99 is a meaningful
-// fraction of latency p99, the run is void.

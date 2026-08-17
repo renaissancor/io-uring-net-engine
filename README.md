@@ -53,8 +53,8 @@ design from day one.
 ```bash
 make loadgen
 CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000
-./loadgen --conns 10000 --per-room 10 --hold 10
-./loadgen --conns 40000 --per-room 10 --src-ips 4 --hold 20
+./loadgen --conns 10000 --per-room 10 --rate 1 --duration 10
+./loadgen --conns 40000 --per-room 10 --src-ips 4 --rate 1 --duration 20
 ```
 
 ### Verified results
@@ -101,12 +101,73 @@ Three things that had to be right before any of this worked:
   phase never finishes. `--per-room` keeps fan-out out of a connection-scale
   test; fan-out is a separate experiment with its own knob.
 
-### Not built yet (phase 2)
+## The baseline number
 
-Message send, latency histogram. The design notes are at the bottom of
-`loadgen.cpp`: open-loop scheduling, latency measured against the *intended*
-send time (coordinated omission), fixed filler strings per size class, and a
-self-lag histogram so client saturation cannot be misread as server queueing.
+This is what the whole exercise was for: the number io_uring has to beat.
+
+```bash
+./loadgen --conns 10000 --per-room 10 --rate 6 --duration 12
+```
+
+Each message is broadcast to its room, so delivered messages per second is
+`conns × rate × per-room`. Server is single-threaded, so one core is the
+ceiling. Loopback, same machine.
+
+| rate | delivered/s | server CPU | latency p50 | latency p99 | self-lag p99 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 100k | — | 0.022 ms | 0.152 ms | 0.011 ms |
+| 5 | 500k | 78.5% | 0.022 ms | 13.0 ms | 0.034 ms |
+| 6 | 600k | 93.2% | 0.026 ms | 13.4 ms | 0.042 ms |
+| 7 | 700k | **99.7%** | **45.4 ms** | 176.6 ms | 0.426 ms |
+| 8 | 800k | 100% | 142.3 ms | 371.2 ms | 0.603 ms |
+| 10 | 1.0M | 100% | 276.4 ms | 735.4 ms | 0.936 ms |
+| 14 | 1.4M | 100% | 446.5 ms | >1000 ms | 1.499 ms |
+
+**The knee is at ~600–700k deliveries/s, and it is exactly where one core
+runs out.** p50 goes from 26 µs to 45 ms — a factor of 1700 — for a 17%
+increase in offered load. Nothing was dropped and no connection was lost at
+any rate; the server degrades by queueing, not by failing.
+
+Self-lag stays two to three orders of magnitude below latency throughout, so
+none of these rows are measuring the load generator. That check is not
+decoration: without it the rate-14 row is indistinguishable from a client that
+was simply too slow to keep up, and reporting it as a server result would have
+been wrong.
+
+### Where the time actually goes
+
+Sampled at rate 6, the saturation point:
+
+```
+user   0.42s   ( 7.0% of wall)
+sys    5.09s   (84.8% of wall)
+split: 8% user / 92% kernel
+```
+
+**92% of the server's CPU is kernel time.** At 600k deliveries/s that is
+essentially one `send()` per delivery plus the `recv()` and `epoll_wait()`
+traffic around it — the application logic (framing, room lookup, string
+assembly) accounts for 8%.
+
+This is the entire argument for the io_uring port, and it is now measured
+rather than assumed: the cost being attacked is syscall transitions, and 92%
+of the budget sits in the part io_uring can batch. It also sets the honest
+ceiling — even a perfect result cannot recover more than that 92%, and the 8%
+of userspace work does not go away.
+
+The same measurement is the first thing to re-run against the io_uring server.
+If its user/kernel split does not move, the port did not do what it was for.
+
+### Caveats on these numbers
+
+- Loopback only. No NIC, no driver path, and client and server share the CPU.
+- The histogram tops out at 1 s. Rows where p99 shows `>1000 ms` have samples
+  excluded, which is also why rate 20 reports a *lower* p50 than rate 14 —
+  past saturation the percentiles stop being comparable.
+- Steady-state connections, not churn. Repeated connect/disconnect is a
+  different and harder workload that this does not touch.
+- `--size-mix` (rotating 16/32/256/1000-byte payloads) exists but the table
+  above is fixed 64-byte filler.
 
 ## Protocol
 
