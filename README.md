@@ -120,6 +120,14 @@ numbers describe the sanitiser.
 | `slowreader` | does a client that never reads get dropped without taking the server down |
 | `dribble` | does the parser survive frames split one byte per `send()` |
 
+`interactive` is not decoration — it is the only mode a human drives, and the
+first time one did, it crashed. Two defects that no synthetic mode could
+reach are recorded in
+[`design/2026-08-17-interactive-client-defects.md`](design/2026-08-17-interactive-client-defects.md):
+stdin is a byte stream and an IME can split a UTF-8 character across reads,
+and the server's payload cap applies to `"nick: " + text` so the real limit is
+per-user and has two invisible cliffs.
+
 `verify` varies payload length across 8/63/64/65/200/900 bytes so framing
 boundaries get exercised rather than one comfortable size, and it checks for
 three distinct failures a throughput test reports as a clean 100%: messages

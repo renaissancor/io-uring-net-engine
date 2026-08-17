@@ -78,6 +78,61 @@ class Proto:
 
 P = Proto("study")   # replaced in main() by --proto
 
+# The server's payload cap applies to what it BROADCASTS, not to what you
+# send: it assembles "nick: " + text and checks that. So the text a client may
+# actually send is the cap minus its own nickname — the limit is per-user, and
+# nobody is told what theirs is.
+#
+# Measured against epoll-chat-study with a 6-character nick:
+#
+#   text <= 1016 B   ->  broadcast 1024 B    ->  delivered
+#   text 1017-1024 B ->  broadcast over cap  ->  SILENTLY DROPPED, socket open
+#   text >= 1025 B   ->  frame over cap      ->  CONNECTION CLOSED
+#
+# Two cliffs, both invisible from the client. Checking here turns the first
+# into a message and stops the second from happening at all.
+MAX_PAYLOAD = 1024
+NICK_SEP = ": "
+
+
+def chat_budget(nick: str) -> int:
+    """Bytes of text this nickname may send before the server drops it."""
+    return MAX_PAYLOAD - len((nick or "").encode()) - len(NICK_SEP.encode())
+
+
+def encode_line(line: str):
+    """Bytes for a line read from a terminal, plus a warning if it was damaged.
+
+    stdin decodes with errors='surrogateescape' whenever the locale is not a
+    full UTF-8 one — C.UTF-8 counts, and that is the WSL default. A byte that
+    could not be decoded survives as a lone surrogate, and .encode() on that
+    raises UnicodeEncodeError rather than producing bytes. Typing Korean
+    through an IME reaches this: a composing syllable can be flushed
+    mid-character, so a three-byte sequence arrives with two of its bytes.
+
+    This is the same shape as lesson 4 on the server side. stdin is a byte
+    stream, not a character stream, and a multi-byte character can be split
+    across reads. The server was given a state machine for exactly that; the
+    client was not, and it crashed on the first Korean a human typed into it.
+    """
+    try:
+        return line.encode(), None
+    except UnicodeEncodeError:
+        # Recover the bytes the terminal actually sent. If they are valid
+        # UTF-8 after all, the surrogates were an artifact of how stdin was
+        # decoded and the input itself was fine.
+        raw = line.encode("utf-8", "surrogateescape")
+        try:
+            raw.decode("utf-8")
+            return raw, None
+        except UnicodeDecodeError:
+            # Genuinely malformed. Drop the damaged characters rather than the
+            # line, and never the session: a chat client that dies on one bad
+            # keystroke is worse than one that says what it dropped.
+            return (raw.decode("utf-8", "replace").encode(),
+                    "input had a truncated UTF-8 sequence "
+                    "(IME mid-composition?); damaged characters were replaced")
+
 
 def read_frames(sock, buf: bytearray):
     """Pull whatever is available and return complete frames, or None on EOF."""
@@ -122,13 +177,24 @@ def connect(host, port, nick=None, room=None, rcvbuf=None):
 def mode_interactive(a):
     s = connect(a.host, a.port, a.nick, a.room)
     buf = bytearray()
+    quitting = threading.Event()
 
     def rx():
-        while True:
+        while not quitting.is_set():
             try:
                 frames = read_frames(s, buf)
             except ValueError as e:
                 print(f"\n[protocol error] {e}")
+                return
+            except OSError:
+                # Ctrl-D closes the socket from the main thread while this one
+                # is parked in recv(), so the fd goes bad underneath it. That
+                # is a normal exit, not a fault — but only ValueError was
+                # caught here, so every clean quit ended by dumping a
+                # traceback that the interpreter then truncated on its way
+                # out, which reads exactly like a crash.
+                if not quitting.is_set():
+                    print("\n[connection lost]")
                 return
             if frames is None:
                 print("\n[server closed]")
@@ -138,14 +204,43 @@ def mode_interactive(a):
                 print(f"{tag} {payload}")
 
     threading.Thread(target=rx, daemon=True).start()
+    budget = chat_budget(a.nick)
     print(f"connected as {a.nick} in #{a.room}. type to chat, Ctrl-D to quit.")
+    print(f"  message limit {budget} bytes "
+          f"(~{budget // 3} Korean characters, {budget} ASCII) — "
+          f"your nickname is spent from the same budget.")
     try:
         for line in sys.stdin:
             line = line.rstrip("\n")
-            if line:
-                s.sendall(P.frame(P.C_CHAT, line))
+            if not line:
+                continue
+
+            body, warning = encode_line(line)
+            if warning:
+                print(f"[input] {warning}")
+
+            # Refuse rather than let the server drop it silently or hang up.
+            if len(body) > budget:
+                print(f"[too long] {len(body)} bytes, limit {budget} "
+                      f"({len(line)} characters). Not sent — the server would "
+                      f"have {'closed the connection' if len(body) >= MAX_PAYLOAD + 1 else 'dropped it without telling you'}.")
+                continue
+
+            try:
+                s.sendall(P.frame(P.C_CHAT, body))
+            except OSError as e:
+                print(f"\n[send failed] {e}")
+                break
     except KeyboardInterrupt:
         pass
+
+    # Stdin ended. A human pressing Ctrl-D has already seen every echo, but a
+    # piped script has not: the last message may still be in flight, and
+    # closing here would race the reader thread and drop it. A human never
+    # notices this pause; a script needs it to be deterministic.
+    if not sys.stdin.isatty():
+        time.sleep(0.3)
+    quitting.set()
     s.close()
 
 
