@@ -2,3 +2,5 @@ loadgen
 loadgen-asan
 *.o
 .omc/
+src/*.o
+src/*.d

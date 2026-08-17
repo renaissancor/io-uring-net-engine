@@ -6,12 +6,13 @@ between them is the point:
 
 | | | |
 |---|---|---|
-| `loadgen.cpp` | **instrument** | connection scale and delivery latency, and it says out loud when a run measured the client instead of the server |
+| `src/` + `fleet.py` | **instrument** | connection scale and delivery latency, and it says out loud when a run measured the client instead of the server |
 | `chatcli.py` | **judge** | whether the messages are *correct* — right body, right sender, right room, exactly once |
 
-They do not overlap. `loadgen` embeds a 16-byte blob, reads the timestamp back
-out and discards the rest, so it will happily report 100% delivery at a 0.1 ms
-p99 while every message arrives at the wrong client with the wrong body.
+They do not overlap. `loadgen` embeds a 20-byte blob, reads the timestamp and
+the node stamp back out and discards the rest, so it will happily report 100%
+delivery at a 0.1 ms p99 while every message arrives at the wrong client with
+the wrong body.
 Nothing it measures can catch that. `chatcli.py verify` exists for exactly
 that gap, and `chatcli.py interactive` is the human-eyeball version of the
 same question.
@@ -35,13 +36,37 @@ point at.
 
 So they live outside both, keep the STL, and switch protocols with a flag.
 
+## Layout
+
+```
+src/wire.*        frame header, the study/iouring seam, blob layout
+src/config.*      the whole command line, in one struct
+src/conn.h        per-connection state, clock, stop flag
+src/corpus.*      realistic chat text, built once at startup
+src/histogram.*   1us buckets, printing, and the dump merge.py reads
+src/netutil.*     fd limits, source binding, non-blocking read/write
+src/connect.*     phase 1: establish and shard into rooms
+src/traffic.*     phase 2: open-loop schedule, sampling, verdict
+src/main.cpp      argument handling and the two phase calls
+
+fleet.py          run N loadgen processes, assign identities, merge
+merge.py          add raw histograms; percentiles cannot be averaged
+chatcli.py        the judge: content correctness, not throughput
+```
+
 ## Build and run
 
 ```bash
 make
 CHAT_FLUSH=batch CHAT_MAX_CONNS=20000 CHAT_QUIET=1 ./server 9000  # in the study repo
-./loadgen --conns 10000 --per-room 10 --rate 20 --duration 20
-./loadgen --conns 40000 --src-ips 4 --rate 1 --duration 20
+
+# one process — fine at low rate, unverified at high rate (see below)
+./loadgen --conns 10000 --per-room 10 --rate 5 --duration 20
+
+# a fleet — assigns node ids, source-IP ranges and dumps, then merges
+python3 fleet.py --nodes 3 --conns 3334 --rate 30 --duration 20
+python3 fleet.py --nodes 3 --conns 3334 --rate 30 -- --corpus
+
 ./loadgen --help
 
 python3 chatcli.py interactive --nick alice --room lobby
@@ -51,6 +76,28 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 ```
 
 Both take `--proto study|iouring`.
+
+### Payload: fixed length or real chat
+
+`--size` / `--size-mix` send fixed-length filler. `--corpus` sends realistic
+chat text instead — 4096 lines built once from a fixed seed, with the length
+distribution conversations actually have (mostly reactions, a thin tail of
+paragraphs; measured 1–445 bytes, mean 34.9).
+
+The no-RNG-in-the-hot-loop rule is unchanged, only front-loaded: the corpus is
+assembled at startup and the send path does one index and returns a reference.
+The seed is fixed rather than time-based so two runs, and two nodes of one
+fleet, put identical bytes on the wire.
+
+**Fixed length stays the default**, because it is the one the recorded
+baselines used and because it keeps frame size a controlled variable. Reach for
+`--corpus` when the question is how the server behaves under a realistic size
+mix, not when comparing two servers.
+
+The text is Korean, so it is UTF-8 multi-byte — one character is three bytes.
+That is deliberate: the protocol's invariant is the 1 KB byte cap with the
+character limit derived from it, and an ASCII corpus would leave that
+distinction untested.
 
 `make asan` builds a sanitised binary for correctness checks at small
 `--conns`. Do not measure with it — ASan roughly halves throughput, so the
@@ -223,11 +270,14 @@ anything io_uring is expected to deliver.** The study server takes
 Publishing only the first would credit io_uring for batching that epoll can do
 perfectly well. A weak control group is not a control group.
 
-Numbers below are the second independent measurement, taken on a fresh boot
-of both binaries with one fresh server process per data point. They are not
-the first session's numbers copied forward; the first session's p50 column
-read 0.021 / 0.023 / 0.031 / 0.048 / 0.103, which is the reproduction result
-worth stating on its own.
+Numbers below are the **third** measurement, and the first one taken with a
+fleet rather than a single client process. The single-process ladder recorded
+earlier was wrong above rate 5, for two compounding reasons documented under
+"One process cannot verify itself" — treat any number here that predates the
+fleet as withdrawn.
+
+Method: `python3 fleet.py --nodes 3 --conns 3334 --rate <r> --duration 20`
+against a fresh server per point.
 
 ### immediate — one send() per delivery
 
@@ -239,50 +289,54 @@ worth stating on its own.
 
 ### batch — one send() per connection per epoll batch
 
-| rate | delivered/s | server CPU | user/kernel | p50 | p99 | self-lag p99 |
-|---:|---:|---:|---:|---:|---:|---:|
-| 5 | 500k | 77% | 6 / 93 | 0.020 ms | 0.166 ms | 0.023 ms |
-| 8 | 800k | 97% | 6 / 93 | 0.022 ms | 0.265 ms | 0.030 ms |
-| 14 | 1.4M | 96% | 9 / 90 | 0.031 ms | 0.580 ms | 0.070 ms |
-| 16 | 1.6M | 97% | 9 / 90 | 0.035 ms | 0.545 ms | 0.073 ms |
-| 18 | 1.8M | 98% | 10 / 89 | 0.039 ms | 0.538 ms | 0.094 ms |
-| 20 | 2.0M | 97% | 11 / 88 | 0.047 ms | 0.521 ms | 0.110 ms |
-| 30 | 3.0M | 99% | 13 / 86 | 0.100 ms | 4.502 ms | 0.838 ms |
-| 45 | — | 100% | 13 / 86 | `[VOID]` | `[VOID]` | client died first |
+Three processes, ~10k connections total, so the client is not in the way.
 
-### What the comparison says
+| rate | delivered/s | p50 | p99 | self-lag p99 | one process reported |
+|---:|---:|---:|---:|---:|---:|
+| 5 | 500k | 0.023 ms | 0.237 ms | 0.001 ms | 0.022 ms — agrees |
+| 8 | 800k | 0.056 ms | 0.455 ms | 0.003 ms | 0.025 ms — **2x low** |
+| 14 | 1.4M | 0.073 ms | 0.770 ms | 0.008 ms | 0.035 ms — **2x low** |
+| 20 | 2.0M | 0.102 ms | 1.480 ms | 0.021 ms | 0.056 ms — **2x low** |
+| 30 | 3.0M | 18.533 ms | 38.701 ms | 0.024 ms | 0.136 ms — **136x low** |
 
-**Inline sending costs latency, not throughput.** This is the sharpest form
-of the result, and it only became visible on re-measurement. At rate 14 the
-two modes delivered essentially the same frame count — 28,003,573 batched
-against 28,015,074 inline — and reported p50 **0.031 ms** and **460.1 ms**.
-Same work done, same second, a factor of 15,000 apart. Inline `send()` does
-not reduce what the server can push; it holds the event loop inside syscalls
-while events pile up behind it, and every delivery then waits out the whole
-backlog. The failure is queueing, not capacity.
+**The ceiling is 2M deliveries/s.** Below it the server holds a sub-millisecond
+p50; at 3M it is 18.5 ms and past the knee. The earlier "2M measured, 3M
+observed" reading came from a client that could not see the queue it was
+creating.
 
-**The collapse shows in the tail before it shows in the median.** At rate 5,
-well under the knee and at 79% of one core, immediate reports p50 0.022 ms —
-indistinguishable from batch — while its p99.9 is 12.328 ms against batch's
-0.382 ms, a factor of 32. A median-only report would have called that rate
-healthy.
+### One process cannot verify itself
 
-**Batching gets *more* effective as load rises.** rate 8 and rate 20 both sit
-at ~97% CPU, but rate 20 delivers 2.5× the messages. Higher load means more
-messages accumulate per epoll batch, so more of them coalesce into one
-`send()`, so the cost per delivery falls. The user/kernel split shifts from
-6/93 to 13/86 across that range, which is exactly the signature of syscalls
-being removed while the memcpy work stays.
+This is the finding worth keeping, above any particular number.
 
-**The clean measured ceiling is 2M deliveries/s, with 3M reachable and
-noisier.** Through rate 20 the ladder is monotone and repeatable; at rate 30
-the server still delivers 3.0M/s at p50 0.100 ms but the tail and the client's
-own self-lag both enter the millisecond range, so the two are no longer
-cleanly separable from one client process. At rate 45 the load generator
-saturates outright and correctly refuses to report. Quote 2M as measured and
-3M as observed — and if the io_uring server needs to be pushed past that,
-it takes `--src-ips`, more processes, and more machines, not a bigger rate.
+A saturated load generator does not report that it is saturated. It reports
+plausible server numbers that happen to be wrong, and the self-lag guard —
+built exactly to catch this — did not fire, because it watches sends and the
+damage was on the receive side.
 
+Two separate mechanisms, found by carrying identical load with one process and
+with three and asking why they disagreed:
+
+**Receive-side coordinated omission.** `recv_ts` was stamped once per
+`epoll_wait` batch and shared by every frame read in that batch. The frames at
+the end of a long ready list are the late ones, and dating them from when the
+walk began deletes precisely the delay that saturation caused. More
+connections per process means longer batches means more deleted. At 3M/s the
+batch stamp reported p50 0.109 ms from one process and 18.868 ms from three
+carrying the same connections and the same load — with the server at 100% CPU
+and the same user/kernel split in both, so the server was doing identical work.
+Fixed: stamped per socket.
+
+**The client is inside the system under test.** Even correctly stamped, a
+client that cannot read fast enough closes its receive windows, and TCP
+backpressure then stops the server from building the queue it would build
+against a client that keeps up. Nothing is mis-measured; the server is simply
+not being asked the question you thought you asked. This one has no fix in
+code — it is what `fleet.py`, `--src-ips` and more machines are for.
+
+**So: a single-process number at high rate is unverified, not wrong-by-default
+but unverified.** Confirm it with a fleet run at the same connection count
+before quoting it. The two agreed exactly at rate 5 and diverged by 2x from
+rate 8 onward.
 ### Where the time goes
 
 At the fair baseline the server spends **86–93% of its CPU in kernel time**,
