@@ -39,7 +39,8 @@ So they live outside both, keep the STL, and switch protocols with a flag.
 
 ```bash
 make
-./loadgen --conns 10000 --per-room 10 --rate 6 --duration 12
+CHAT_FLUSH=batch CHAT_MAX_CONNS=20000 CHAT_QUIET=1 ./server 9000  # in the study repo
+./loadgen --conns 10000 --per-room 10 --rate 20 --duration 20
 ./loadgen --conns 40000 --src-ips 4 --rate 1 --duration 20
 ./loadgen --help
 
@@ -189,54 +190,92 @@ Three settings that had to be right before any of this worked:
 Delivered messages per second is `conns × rate × per-room`. The server is
 single-threaded, so one core is the ceiling.
 
-| rate | delivered/s | server CPU | latency p50 | latency p99 | self-lag p99 |
+**There are two baselines, and the difference between them is larger than
+anything io_uring is expected to deliver.** The study server takes
+`CHAT_FLUSH=immediate|batch`:
+
+- `immediate` — a broadcast calls `send()` once per recipient, inline, while
+  walking the room. One syscall per delivery. The naive shape.
+- `batch` — the room walk only appends to each recipient's buffer, and one
+  flush pass at the end of the epoll batch sends what accumulated. Several
+  messages bound for the same connection collapse into one `send()`.
+
+Publishing only the first would credit io_uring for batching that epoll can do
+perfectly well. A weak control group is not a control group.
+
+### immediate — one send() per delivery
+
+| rate | delivered/s | server CPU | user/kernel | p50 | p99 |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 100k | — | 0.022 ms | 0.152 ms | 0.011 ms |
-| 5 | 500k | 78.5% | 0.022 ms | 13.0 ms | 0.034 ms |
-| 6 | 600k | 93.2% | 0.026 ms | 13.4 ms | 0.042 ms |
-| 7 | 700k | **99.7%** | **45.4 ms** | 176.6 ms | 0.426 ms |
-| 8 | 800k | 100% | 142.3 ms | 371.2 ms | 0.603 ms |
-| 10 | 1.0M | 100% | 276.4 ms | 735.4 ms | 0.936 ms |
-| 14 | 1.4M | 100% | 446.5 ms | >1000 ms | 1.499 ms |
+| 5 | 500k | 79% | 8 / 92 | 0.022 ms | 0.612 ms |
+| 7 | 700k | **99%** | 6 / 94 | **85.9 ms** | 196.5 ms |
+| 8 | 800k | 100% | — | 142.3 ms | 371.2 ms |
+| 10 | 1.0M | 100% | — | 276.4 ms | 735.4 ms |
+| 14 | 1.4M | 100% | — | 446.5 ms | >1000 ms |
 
-**The knee is at ~600–700k deliveries/s, exactly where one core runs out.**
-p50 moves from 26 µs to 45 ms — a factor of 1700 — for a 17% increase in
-offered load. Nothing was dropped and no connection was lost at any rate: the
-server degrades by queueing, not by failing.
+### batch — one send() per connection per epoll batch
 
-Self-lag stays two to three orders of magnitude below latency throughout, so
-none of these rows are measuring the load generator.
+| rate | delivered/s | server CPU | user/kernel | p50 | p99 | self-lag p99 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 500k | 78% | 7 / 93 | 0.021 ms | 0.172 ms | 0.03 ms |
+| 8 | 800k | 98% | 13 / 87 | 0.023 ms | 0.262 ms | 0.04 ms |
+| 14 | 1.4M | 97% | 11 / 89 | 0.031 ms | 0.484 ms | 0.09 ms |
+| 20 | 2.0M | 97% | 15 / 85 | 0.048 ms | 0.811 ms | 0.30 ms |
+| 30 | 3.0M | 99% | 14 / 86 | 0.103 ms | 7.697 ms | 1.12 ms |
+| 45 | — | — | — | `[VOID]` | `[VOID]` | client died first |
+
+### What the comparison says
+
+**The `immediate` knee at ~700k was a property of the design, not of the
+machine.** At rate 7 both modes sit at ~98% of one core, and immediate reports
+p50 85.9 ms while batch reports 0.021 ms — a factor of 4000 at identical
+offered load and identical CPU. What produced the 86 ms was not CPU
+exhaustion; it was the event loop being held inside inline syscalls while
+events piled up behind it.
+
+**Batching gets *more* effective as load rises.** rate 8 and rate 20 both sit
+at ~98% CPU, but rate 20 delivers 2.5× the messages. Higher load means more
+messages accumulate per epoll batch, so more of them coalesce into one
+`send()`, so the cost per delivery falls. The user/kernel split shifts from
+7/93 to 15/85 across that range, which is exactly the signature of syscalls
+being removed while the memcpy work stays.
+
+**The real ceiling is 2–3M deliveries/s**, roughly 4× the naive figure, and
+past that it cannot be measured from one client process — at rate 45 the load
+generator saturated first and correctly refused to report, which is what
+`--src-ips` and multiple processes and machines exist for.
 
 ### Where the time goes
 
-Sampled at rate 6, the saturation point:
+At the fair baseline the server spends **85–89% of its CPU in kernel time**,
+falling as coalescing improves. Application logic — framing, room lookup,
+string assembly — is the remaining 11–15%.
 
-```
-user   0.42s   ( 7.0% of wall)
-sys    5.09s   (84.8% of wall)
-split: 8% user / 92% kernel
-```
+That is the io_uring argument measured rather than assumed: the cost being
+attacked is syscall transitions, and that is where the budget sits. It is also
+the honest ceiling, and the honest ceiling moved twice today — first because
+92% was measured against a naive baseline, and again because the throughput
+bar rose from 700k to 2–3M.
 
-**92% of the server's CPU is kernel time** — essentially one `send()` per
-delivery plus the `recv()` and `epoll_wait()` around it. Application logic
-(framing, room lookup, string assembly) is 8%.
-
-This is the io_uring argument measured rather than assumed: the cost being
-attacked is syscall transitions, and 92% of the budget sits in the part
-io_uring can batch. It is also the honest ceiling — a perfect port cannot
-recover more than that 92%, and the 8% of userspace work does not go away.
-
-**Re-run this split first against the io_uring server.** If it does not move,
-the port did not do what it was for.
+**Re-run this split first against the io_uring server, and against `batch`,
+never against `immediate`.** If the split does not move, the port did not do
+what it was for.
 
 ## Caveats
 
 - Loopback only. No NIC, no driver path, and client and server share the CPU.
 - The histogram tops out at 1 s. Rows showing `>1000 ms` have samples
-  excluded, which is also why rate 20 reports a *lower* p50 than rate 14 —
-  past saturation the percentiles stop being comparable.
+  excluded, so past saturation the percentiles stop being comparable between
+  rows.
+- `batch` flushes at the end of an epoll batch — microseconds — not on a
+  fixed-rate tick. A 30 Hz tick would add up to 33 ms and is a different
+  experiment.
 - Steady-state connections, not churn. Repeated connect/disconnect is a
   different and harder workload this does not touch.
-- Fan-out is fixed at rooms of 10 throughout. Large rooms are a separate
-  experiment.
-- `--size-mix` exists but the table above is fixed 64-byte filler.
+- Fan-out is rooms of 10 in the tables above. Varying it 10 → 100 → 500 at a
+  fixed 500k deliveries/s moved the user/kernel split only from 7/93 to 4/96,
+  so the split is not an artifact of small rooms. It *is* an artifact of chat:
+  per-recipient work here is a memcpy, where a game server would add AoI
+  filtering and per-recipient serialization. Re-measure when gameplay packets
+  land.
+- `--size-mix` exists but every table above is fixed 64-byte filler.
