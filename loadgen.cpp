@@ -899,18 +899,41 @@ int main(int argc, char** argv)
         // The verdict. Latency numbers taken while this process was itself
         // falling behind describe this process, not the server, and reporting
         // them without saying so is the classic way to publish a wrong result.
+        //
+        // The ratio alone is not enough. Self-lag inflates measured latency
+        // roughly additively, so what decides whether a run is usable is
+        // whether subtracting it would change the conclusion. Near the knee
+        // both numbers shrink to the same scale and the bare ratio starts
+        // flipping on scheduler noise: three back-to-back runs at the same
+        // rate reported self-lag 0.133/0.143/0.131ms against latency
+        // 0.726/0.658/0.604ms — indistinguishable measurements, and the
+        // 5x ratio called the first OK and the other two VOID. Hence the
+        // absolute floor: below a millisecond of client jitter, a server
+        // whose p99 is sub-millisecond is sub-millisecond either way, and
+        // the honest report is the corrected lower bound, not a thrown-away
+        // run. Above the floor the correction is load-bearing and the run
+        // really does describe the client.
         bool a = false, b = false;
         const int64_t lat99 = st.latency.pct(0.99, a);
         const int64_t lag99 = st.self_lag.pct(0.99, b);
+        constexpr int64_t k_lag_floor_ns = 1'000'000;   // 1ms
         if (st.latency.total == 0) {
             std::printf("[VOID] no latency samples\n");
-        } else if (lag99 * 5 > lat99) {
+        } else if (lag99 * 5 > lat99 && lag99 >= k_lag_floor_ns) {
             std::printf("[VOID] self-lag p99 (%.3fms) is not small against "
                         "latency p99 (%.3fms) — this run measured the client, "
                         "not the server. Lower --rate or --conns, or add "
                         "processes and machines.\n",
                         static_cast<double>(lag99) / 1e6,
                         static_cast<double>(lat99) / 1e6);
+        } else if (lag99 * 5 > lat99) {
+            std::printf("[WARN] self-lag p99 (%.3fms) is a large fraction of "
+                        "latency p99 (%.3fms), but is under 1ms in absolute "
+                        "terms. Read the server p99 as >= %.3fms; the run is "
+                        "usable, the headroom is not.\n",
+                        static_cast<double>(lag99) / 1e6,
+                        static_cast<double>(lat99) / 1e6,
+                        static_cast<double>(lat99 - lag99) / 1e6);
         } else {
             std::printf("[ OK ] self-lag p99 (%.3fms) is small against latency "
                         "p99 (%.3fms); the client was not the bottleneck\n",

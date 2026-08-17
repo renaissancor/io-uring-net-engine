@@ -135,9 +135,29 @@ omission, and it is the default failure mode of hand-rolled load tests.
 **A self-lag histogram beside the latency histogram.** The loop records how
 late it was issuing each send. Without it there is no way to separate server
 queueing from client saturation, and the classic wrong result is reporting
-"p99 200 ms at 100k connections" when the client was the thing dying. If
-self-lag p99 is not small against latency p99, the run prints `[VOID]` and its
-numbers do not describe the server.
+"p99 200 ms at 100k connections" when the client was the thing dying.
+
+The verdict has three levels, and the third one had to be added after the
+bare ratio test misfired:
+
+| verdict | condition | meaning |
+|---|---|---|
+| `[ OK ]` | `lag99 * 5 <= lat99` | the client was not the bottleneck |
+| `[WARN]` | ratio fails but `lag99 < 1 ms` | usable; read server p99 as `>= lat99 - lag99` |
+| `[VOID]` | ratio fails and `lag99 >= 1 ms` | this run measured the client |
+
+Self-lag inflates measured latency roughly additively, so what decides
+whether a run is usable is whether subtracting it would change the
+conclusion — not the ratio by itself. Near the knee both numbers shrink to
+the same scale and a bare ratio starts flipping on scheduler noise: three
+back-to-back runs at rate 20 measured self-lag 0.133 / 0.143 / 0.131 ms
+against latency 0.726 / 0.658 / 0.604 ms, and `lag99 * 5 > lat99` called the
+first `[ OK ]` and the other two `[VOID]`. Those are the same measurement.
+Below a millisecond of client jitter a sub-millisecond server p99 stays
+sub-millisecond even fully corrected, so the honest output is the corrected
+lower bound rather than a discarded run. Above the floor the correction is
+load-bearing — a run reporting latency p99 10.478 ms with self-lag p99
+4.640 ms is genuinely void, and gets the same word for a real reason.
 
 Filler is fixed strings per size class, not per-message RNG: randomness in the
 hot loop is client CPU, and client CPU lands in the measurement as server
@@ -203,59 +223,83 @@ anything io_uring is expected to deliver.** The study server takes
 Publishing only the first would credit io_uring for batching that epoll can do
 perfectly well. A weak control group is not a control group.
 
+Numbers below are the second independent measurement, taken on a fresh boot
+of both binaries with one fresh server process per data point. They are not
+the first session's numbers copied forward; the first session's p50 column
+read 0.021 / 0.023 / 0.031 / 0.048 / 0.103, which is the reproduction result
+worth stating on its own.
+
 ### immediate — one send() per delivery
 
-| rate | delivered/s | server CPU | user/kernel | p50 | p99 |
-|---:|---:|---:|---:|---:|---:|
-| 5 | 500k | 79% | 8 / 92 | 0.022 ms | 0.612 ms |
-| 7 | 700k | **99%** | 6 / 94 | **85.9 ms** | 196.5 ms |
-| 8 | 800k | 100% | — | 142.3 ms | 371.2 ms |
-| 10 | 1.0M | 100% | — | 276.4 ms | 735.4 ms |
-| 14 | 1.4M | 100% | — | 446.5 ms | >1000 ms |
+| rate | delivered/s | server CPU | user/kernel | p50 | p99 | p99.9 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 500k | 79% | 7 / 92 | 0.022 ms | 0.454 ms | **12.328 ms** |
+| 7 | 700k | **100%** | 7 / 92 | **67.8 ms** | 187.4 ms | 210.4 ms |
+| 14 | 1.4M | 100% | 7 / 92 | **460.1 ms** | >1000 ms | >1000 ms |
 
 ### batch — one send() per connection per epoll batch
 
 | rate | delivered/s | server CPU | user/kernel | p50 | p99 | self-lag p99 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 5 | 500k | 78% | 7 / 93 | 0.021 ms | 0.172 ms | 0.03 ms |
-| 8 | 800k | 98% | 13 / 87 | 0.023 ms | 0.262 ms | 0.04 ms |
-| 14 | 1.4M | 97% | 11 / 89 | 0.031 ms | 0.484 ms | 0.09 ms |
-| 20 | 2.0M | 97% | 15 / 85 | 0.048 ms | 0.811 ms | 0.30 ms |
-| 30 | 3.0M | 99% | 14 / 86 | 0.103 ms | 7.697 ms | 1.12 ms |
-| 45 | — | — | — | `[VOID]` | `[VOID]` | client died first |
+| 5 | 500k | 77% | 6 / 93 | 0.020 ms | 0.166 ms | 0.023 ms |
+| 8 | 800k | 97% | 6 / 93 | 0.022 ms | 0.265 ms | 0.030 ms |
+| 14 | 1.4M | 96% | 9 / 90 | 0.031 ms | 0.580 ms | 0.070 ms |
+| 16 | 1.6M | 97% | 9 / 90 | 0.035 ms | 0.545 ms | 0.073 ms |
+| 18 | 1.8M | 98% | 10 / 89 | 0.039 ms | 0.538 ms | 0.094 ms |
+| 20 | 2.0M | 97% | 11 / 88 | 0.047 ms | 0.521 ms | 0.110 ms |
+| 30 | 3.0M | 99% | 13 / 86 | 0.100 ms | 4.502 ms | 0.838 ms |
+| 45 | — | 100% | 13 / 86 | `[VOID]` | `[VOID]` | client died first |
 
 ### What the comparison says
 
-**The `immediate` knee at ~700k was a property of the design, not of the
-machine.** At rate 7 both modes sit at ~98% of one core, and immediate reports
-p50 85.9 ms while batch reports 0.021 ms — a factor of 4000 at identical
-offered load and identical CPU. What produced the 86 ms was not CPU
-exhaustion; it was the event loop being held inside inline syscalls while
-events piled up behind it.
+**Inline sending costs latency, not throughput.** This is the sharpest form
+of the result, and it only became visible on re-measurement. At rate 14 the
+two modes delivered essentially the same frame count — 28,003,573 batched
+against 28,015,074 inline — and reported p50 **0.031 ms** and **460.1 ms**.
+Same work done, same second, a factor of 15,000 apart. Inline `send()` does
+not reduce what the server can push; it holds the event loop inside syscalls
+while events pile up behind it, and every delivery then waits out the whole
+backlog. The failure is queueing, not capacity.
+
+**The collapse shows in the tail before it shows in the median.** At rate 5,
+well under the knee and at 79% of one core, immediate reports p50 0.022 ms —
+indistinguishable from batch — while its p99.9 is 12.328 ms against batch's
+0.382 ms, a factor of 32. A median-only report would have called that rate
+healthy.
 
 **Batching gets *more* effective as load rises.** rate 8 and rate 20 both sit
-at ~98% CPU, but rate 20 delivers 2.5× the messages. Higher load means more
+at ~97% CPU, but rate 20 delivers 2.5× the messages. Higher load means more
 messages accumulate per epoll batch, so more of them coalesce into one
 `send()`, so the cost per delivery falls. The user/kernel split shifts from
-7/93 to 15/85 across that range, which is exactly the signature of syscalls
+6/93 to 13/86 across that range, which is exactly the signature of syscalls
 being removed while the memcpy work stays.
 
-**The real ceiling is 2–3M deliveries/s**, roughly 4× the naive figure, and
-past that it cannot be measured from one client process — at rate 45 the load
-generator saturated first and correctly refused to report, which is what
-`--src-ips` and multiple processes and machines exist for.
+**The clean measured ceiling is 2M deliveries/s, with 3M reachable and
+noisier.** Through rate 20 the ladder is monotone and repeatable; at rate 30
+the server still delivers 3.0M/s at p50 0.100 ms but the tail and the client's
+own self-lag both enter the millisecond range, so the two are no longer
+cleanly separable from one client process. At rate 45 the load generator
+saturates outright and correctly refuses to report. Quote 2M as measured and
+3M as observed — and if the io_uring server needs to be pushed past that,
+it takes `--src-ips`, more processes, and more machines, not a bigger rate.
 
 ### Where the time goes
 
-At the fair baseline the server spends **85–89% of its CPU in kernel time**,
-falling as coalescing improves. Application logic — framing, room lookup,
-string assembly — is the remaining 11–15%.
+At the fair baseline the server spends **86–93% of its CPU in kernel time**,
+and the number *falls as load rises* — 93% at rate 5, 90% at rate 14, 86% at
+rate 30 — because coalescing removes syscalls while the memcpy work stays.
+Application logic (framing, room lookup, string assembly) is the remaining
+7–14%.
+
+Read the direction, not just the value: the kernel share is highest where the
+server is least busy. Quoting a single figure hides that, which is how the
+first session ended up with "92%" as if it were a constant.
 
 That is the io_uring argument measured rather than assumed: the cost being
 attacked is syscall transitions, and that is where the budget sits. It is also
-the honest ceiling, and the honest ceiling moved twice today — first because
-92% was measured against a naive baseline, and again because the throughput
-bar rose from 700k to 2–3M.
+the honest ceiling, and the honest ceiling has moved twice — first because 92%
+was measured against a naive baseline, and again because the throughput bar
+rose from 700k to 2M measured / 3M observed.
 
 **Re-run this split first against the io_uring server, and against `batch`,
 never against `immediate`.** If the split does not move, the port did not do
