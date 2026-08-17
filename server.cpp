@@ -5,7 +5,9 @@
 // backpressure, disconnect ordering) correct somewhere cheap to debug, before
 // porting to io_uring where completion semantics add their own failure modes.
 //
-// The six lessons this file is built to teach are marked LESSON 1..6.
+// The lessons this file is built to teach are marked LESSON 1..6 in the code;
+// lessons 7 (backpressure on loopback) and 8 (never send() inline while
+// walking the room) are in the README, the latter being why CHAT_FLUSH exists.
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -73,6 +75,7 @@ struct conn {
     std::string out;                 // pending send bytes
     bool        armed_write = false; // is EPOLLOUT currently in this fd's epoll mask?
     bool        closing     = false; // doomed; skip further work this tick
+    bool        dirty       = false; // has unsent bytes queued this batch (batch mode)
 };
 
 static int g_ep      = -1;
@@ -85,9 +88,26 @@ static int g_reserve = -1;   // see LESSON 6 (EMFILE)
 // buffer starts filling almost immediately and the whole path becomes testable.
 static int g_sndbuf = 0;     // 0 = leave kernel default alone
 
+// Send batching. In `immediate` mode a broadcast calls send() once per
+// recipient, inline, while walking the room — one syscall per delivery, and
+// the naive shape. In `batch` mode the room walk only appends to each
+// recipient's `out`, and one flush pass at the end of the epoll batch sends
+// whatever accumulated: several messages bound for the same connection during
+// one batch collapse into a single send().
+//
+// This exists as a switch rather than an edit because the two modes are two
+// different baselines, and comparing io_uring against only the naive one would
+// credit io_uring for batching that epoll can do perfectly well. A weak
+// control group is not a control group.
+//
+// The latency cost is one epoll batch, not one game tick — microseconds, not
+// milliseconds. A fixed-rate tick is a different and much larger change.
+static bool g_batch_flush = false;
+
 static std::unordered_map<int, conn>                              g_conns;
 static std::unordered_map<std::string, std::unordered_set<int>>   g_rooms;
 static std::vector<int>                                           g_doomed;
+static std::vector<int>                                           g_dirty;
 
 // ------------------------------------------------------------------ helpers
 
@@ -179,7 +199,18 @@ static void broadcast(const std::string& room, uint16_t type,
         auto cit = g_conns.find(fd);
         if (cit == g_conns.end() || cit->second.closing) continue;
         queue_send(cit->second, type, payload);
-        flush_send(cit->second);
+
+        // In batch mode the flush is deferred to the end of the epoll batch.
+        // That is not only a syscall optimisation: sending here means a send
+        // failure dooms a connection *while this loop is walking the room's
+        // member set*, which is the cascade that LESSON 5b is about. Deferring
+        // removes the hazard rather than working around it.
+        if (!g_batch_flush)
+            flush_send(cit->second);
+        else if (!cit->second.dirty && !cit->second.out.empty()) {
+            cit->second.dirty = true;
+            g_dirty.push_back(fd);
+        }
     }
 }
 
@@ -301,7 +332,30 @@ static void on_readable(conn& c) {
         doom(c);
         return;
     }
-    flush_send(c);
+    if (!g_batch_flush)
+        flush_send(c);
+    else if (!c.dirty && !c.out.empty()) {
+        c.dirty = true;
+        g_dirty.push_back(c.fd);
+    }
+}
+
+// Batch mode's flush pass. Several messages queued to the same connection
+// during one epoll batch collapse into a single send() here.
+//
+// Index loop re-reading size() for the same reason reap_doomed() uses one:
+// flush_send() can doom a connection, and while doom() only touches g_doomed
+// today, the discipline is cheap and the alternative is a use-after-free the
+// day that changes.
+static void flush_dirty() {
+    for (size_t i = 0; i < g_dirty.size(); ++i) {
+        auto it = g_conns.find(g_dirty[i]);
+        if (it == g_conns.end()) continue;
+        it->second.dirty = false;
+        if (it->second.closing) continue;
+        flush_send(it->second);
+    }
+    g_dirty.clear();
 }
 
 // ------------------------------------------------------------------- accept
@@ -477,6 +531,12 @@ int main(int argc, char** argv) {
     if (const char* q = ::getenv("CHAT_QUIET"))
         g_quiet = (std::atoi(q) != 0);
 
+    if (const char* f = ::getenv("CHAT_FLUSH"))
+        g_batch_flush = (std::strcmp(f, "batch") == 0);
+    std::printf("[cfg ] send flush = %s\n",
+                g_batch_flush ? "batch (end of epoll batch)"
+                              : "immediate (one send per delivery)");
+
     // The connection cap is meaningless without the fd budget behind it: the
     // soft RLIMIT_NOFILE defaults to 1024, so a 10k cap without this just
     // reaches LESSON 6's EMFILE path 9k connections early. Raising the soft
@@ -562,7 +622,18 @@ int main(int argc, char** argv) {
             if (!c.closing && (what & EPOLLIN)) on_readable(c);
         }
 
-        reap_doomed();
+        // Order matters. The first flush sends everything this batch queued
+        // and may doom connections on send failure; reap_doomed() then cleans
+        // those up, and its "X left" broadcasts queue fresh bytes onto the
+        // survivors — hence the second flush, without which those notices
+        // would sit in `out` with no EPOLLOUT armed and never leave.
+        if (g_batch_flush) {
+            flush_dirty();
+            reap_doomed();
+            flush_dirty();
+        } else {
+            reap_doomed();
+        }
     }
 
     for (auto& [fd, c] : g_conns) ::close(fd);

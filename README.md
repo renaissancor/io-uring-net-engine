@@ -43,7 +43,7 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
 | `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
-| `loadgen` | see `netbench/README.md` — knees at ~600–700k deliveries/s |
+| `loadgen` | see `netbench/README.md` — knees at ~2–3M deliveries/s with `CHAT_FLUSH=batch` |
 
 ## Clients live in `netbench`
 
@@ -55,12 +55,16 @@ compared against later.
 
 ```bash
 cd ~/code/netbench && make
-CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000     # here
-./loadgen --conns 10000 --per-room 10 --rate 6 --duration 12
+CHAT_FLUSH=batch CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000     # here
+./loadgen --conns 10000 --per-room 10 --rate 20 --duration 20
 ```
 
-Two environment knobs exist for it:
+Three environment knobs exist for it:
 
+- `CHAT_FLUSH=batch` defers sends to one flush pass at the end of the epoll
+  batch instead of calling `send()` inline per recipient. **See lesson 8 — it
+  is worth 4× the throughput and 4000× the p50, and it is the only fair
+  baseline to compare io_uring against.**
 - `CHAT_MAX_CONNS` raises the connection cap from its 4096 default. The server
   also raises its own `RLIMIT_NOFILE` to match — without that the cap just
   trades a polite refusal for lesson 6's EMFILE livelock nine thousand
@@ -72,14 +76,16 @@ Two environment knobs exist for it:
 
 ### The result worth carrying forward
 
-This server knees at **~600–700k deliveries/s**, exactly where one core runs
-out: a 17% increase in offered load moves p50 from 26 µs to 45 ms. Nothing
-drops and no connection is lost — it degrades by queueing, not by failing.
+| | `immediate` | `batch` |
+|---|---:|---:|
+| knee | ~700k deliveries/s | **~2–3M deliveries/s** |
+| p50 there | 85.9 ms | **0.048–0.103 ms** |
+| kernel share | 92–94% | 85–89% |
 
-At that saturation point it spends **92% of its CPU in kernel time** and 8% in
-application logic. That is the argument for the io_uring port measured rather
-than assumed, and also its honest ceiling. Full tables, method, and caveats
-are in `netbench/README.md`.
+The `immediate` knee was **a property of the design, not the machine**: at the
+same offered load and the same ~98% of one core, the two modes report p50
+85.9 ms and 0.021 ms. Full tables, method, and caveats are in
+`netbench/README.md`.
 
 ## Protocol
 
@@ -107,7 +113,8 @@ used an 8-byte header — the protocol doc is authoritative and says otherwise.
 
 ## The lessons
 
-Marked `LESSON n` in `server.cpp`.
+Lessons 1–6 are marked `LESSON n` in `server.cpp`; 7 and 8 came out of
+measurement rather than from writing the code.
 
 1. **The `EAGAIN` drain loop.** Under level-triggered epoll, looping `recv()`
    until `EAGAIN` is an optimization — read once and return, and `epoll_wait`
@@ -142,6 +149,21 @@ Marked `LESSON n` in `server.cpp`.
    nothing. Shrink `SO_SNDBUF` (hence `CHAT_SNDBUF`) *and* set the client's
    `SO_RCVBUF` **before `connect()`** — set afterwards it's cosmetic, because
    the receive window is negotiated during the handshake.
+
+8. **Never `send()` inline while walking the room.** Queue into each
+   recipient's buffer during the walk, then flush once at the end of the epoll
+   batch. Sending inline holds the event loop inside syscalls while events pile
+   up behind it, and the backlog — not CPU exhaustion — is what produces the
+   collapse: at the same offered load and the same ~98% of one core, inline
+   sending reports p50 **85.9 ms** and batched sending **0.021 ms**. Batching
+   also gets *better* under load, because more messages accumulate per batch
+   and coalesce into one `send()`. And it dissolves lesson 5b outright: with
+   the flush deferred, a send failure can no longer doom a connection while the
+   member set is being iterated.
+
+   This one was found by asking whether the baseline was a fair opponent for
+   io_uring. It was not — publishing the inline number would have credited
+   io_uring with a 4× win that plain epoll could take for itself.
 
 ### The bug worth the whole exercise
 
