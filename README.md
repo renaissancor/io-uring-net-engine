@@ -43,12 +43,12 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
 | `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
-| `loadgen` | see `netbench/README.md` — 2M deliveries/s clean with `CHAT_FLUSH=batch`, reproduced across two sessions |
+| `loadgen` | see `netbench/README.md` — 2M deliveries/s with `CHAT_FLUSH=batch`, measured with a 3-process fleet |
 
 ## Clients live in `netbench`
 
-Both the load generator (`loadgen.cpp`) and the interactive/verify client
-(`chatcli.py`) were extracted to [`~/code/netbench`](../netbench). They had to
+Both the load generator (`src/`, driven by `fleet.py`) and the interactive/verify
+client (`chatcli.py`) were extracted to [`~/code/netbench`](../netbench). They had to
 leave: this repo is marked for deletion, and both are needed to evaluate the
 io_uring server that replaces it — the baseline numbers exist precisely to be
 compared against later.
@@ -56,15 +56,20 @@ compared against later.
 ```bash
 cd ~/code/netbench && make
 CHAT_FLUSH=batch CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000     # here
-./loadgen --conns 10000 --per-room 10 --rate 20 --duration 20
+python3 fleet.py --nodes 3 --conns 3334 --rate 20 --duration 20 --port 9000
 ```
+
+Use `fleet.py`, not a single `./loadgen`, for anything above ~500k
+deliveries/s. One client process reports plausible numbers while saturated —
+see netbench's "One process cannot verify itself".
 
 Three environment knobs exist for it:
 
 - `CHAT_FLUSH=batch` defers sends to one flush pass at the end of the epoll
-  batch instead of calling `send()` inline per recipient. **See lesson 8 — it
-  is worth 4× the throughput and 4000× the p50, and it is the only fair
-  baseline to compare io_uring against.**
+  batch instead of calling `send()` inline per recipient. **See lesson 8 — at
+  the same offered load it is worth four orders of magnitude on the p50 while
+  moving the same number of frames, and it is the only fair baseline to
+  compare io_uring against.**
 - `CHAT_MAX_CONNS` raises the connection cap from its 4096 default. The server
   also raises its own `RLIMIT_NOFILE` to match — without that the cap just
   trades a polite refusal for lesson 6's EMFILE livelock nine thousand
@@ -78,16 +83,21 @@ Three environment knobs exist for it:
 
 | | `immediate` | `batch` |
 |---|---:|---:|
-| clean knee | ~700k deliveries/s | **2M measured, 3M observed** |
-| p50 at 1.4M/s | 460.1 ms | **0.031 ms** |
+| ceiling | ~700k deliveries/s | **2M deliveries/s** |
+| p50 at 1.4M/s | 460.1 ms | **0.073 ms** |
+| p50 at 2.0M/s | — | **0.102 ms** |
+| p50 at 3.0M/s | — | 18.533 ms (past the knee) |
 | p99.9 at 500k/s | 12.328 ms | **0.382 ms** |
 | kernel share | 92–94% | 86–93%, falling as load rises |
 
 The `immediate` knee was **a property of the design, not the machine** — at
 1.4M deliveries/s both modes moved the same 28M frames at 100% of one core,
-and only the latency differed, by a factor of 15,000. Measured twice in
-separate sessions; the `batch` p50 column reproduced to the third decimal.
-Full tables, method, and caveats are in `netbench/README.md`.
+and only the latency differed, by a factor of 15,000. Measured three times; the third
+run used a **fleet of client processes**, and it withdrew the single-process
+numbers above 500k/s — one loadgen process was stamping receive times per
+epoll batch and was itself inside the flow-control loop, so it reported 0.136 ms
+where three processes carrying the same load reported 18.533 ms. Full tables,
+method, and the two mechanisms are in `netbench/README.md`.
 
 ## Protocol
 
