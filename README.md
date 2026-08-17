@@ -125,8 +125,12 @@ used an 8-byte header — the protocol doc is authoritative and says otherwise.
 
 ## The lessons
 
-Lessons 1–6 are marked `LESSON n` in `server.cpp`; 7 and 8 came out of
-measurement rather than from writing the code.
+All eight are marked `LESSON n` in `server.cpp`, so the code and this list
+cross-reference. Lessons 1–6 came out of writing the server; 7 and 8 came out
+of measuring it, which is why their tags are scattered across several sites
+rather than sitting at one function — lesson 8 in particular touches
+`broadcast()`, the recv path, `flush_dirty()` and the main loop's tail
+ordering, and none of those reads as related without the tag.
 
 1. **The `EAGAIN` drain loop.** Under level-triggered epoll, looping `recv()`
    until `EAGAIN` is an optimization — read once and return, and `epoll_wait`

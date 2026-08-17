@@ -81,6 +81,7 @@ struct conn {
 static int g_ep      = -1;
 static int g_reserve = -1;   // see LESSON 6 (EMFILE)
 
+// LESSON 7 — Backpressure is invisible on loopback by default.
 // Test affordance. On loopback the kernel auto-tunes SO_SNDBUF to a couple of
 // megabytes, so send() happily swallows everything and you can never observe
 // EAGAIN, EPOLLOUT arming, or the backpressure path without pushing tens of MB.
@@ -88,6 +89,12 @@ static int g_reserve = -1;   // see LESSON 6 (EMFILE)
 // buffer starts filling almost immediately and the whole path becomes testable.
 static int g_sndbuf = 0;     // 0 = leave kernel default alone
 
+// LESSON 8 — Never send() inline while walking the room. This is the switch
+// that makes both shapes runnable, and `batch` is the honest one: measure
+// io_uring against CHAT_FLUSH=batch, never against immediate. See the README
+// for the numbers. Related sites are tagged `LESSON 8` — broadcast(), the
+// recv path, flush_dirty(), and the main loop's tail ordering.
+//
 // Send batching. In `immediate` mode a broadcast calls send() once per
 // recipient, inline, while walking the room — one syscall per delivery, and
 // the naive shape. In `batch` mode the room walk only appends to each
@@ -200,6 +207,7 @@ static void broadcast(const std::string& room, uint16_t type,
         if (cit == g_conns.end() || cit->second.closing) continue;
         queue_send(cit->second, type, payload);
 
+        // LESSON 8 (and it dissolves LESSON 5b).
         // In batch mode the flush is deferred to the end of the epoll batch.
         // That is not only a syscall optimisation: sending here means a send
         // failure dooms a connection *while this loop is walking the room's
@@ -332,7 +340,7 @@ static void on_readable(conn& c) {
         doom(c);
         return;
     }
-    if (!g_batch_flush)
+    if (!g_batch_flush)          // LESSON 8
         flush_send(c);
     else if (!c.dirty && !c.out.empty()) {
         c.dirty = true;
@@ -340,7 +348,7 @@ static void on_readable(conn& c) {
     }
 }
 
-// Batch mode's flush pass. Several messages queued to the same connection
+// LESSON 8 — batch mode's flush pass. Several messages queued to the same connection
 // during one epoll batch collapse into a single send() here.
 //
 // Index loop re-reading size() for the same reason reap_doomed() uses one:
@@ -622,6 +630,7 @@ int main(int argc, char** argv) {
             if (!c.closing && (what & EPOLLIN)) on_readable(c);
         }
 
+        // LESSON 8 — the flush/reap ordering.
         // Order matters. The first flush sends everything this batch queued
         // and may doom connections on send failure; reap_doomed() then cleans
         // those up, and its "X left" broadcasts queue fresh bytes onto the
