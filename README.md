@@ -43,7 +43,7 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
 | `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
-| `loadgen` | see `netbench/README.md` — knees at ~2–3M deliveries/s with `CHAT_FLUSH=batch` |
+| `loadgen` | see `netbench/README.md` — 2M deliveries/s clean with `CHAT_FLUSH=batch`, reproduced across two sessions |
 
 ## Clients live in `netbench`
 
@@ -78,14 +78,16 @@ Three environment knobs exist for it:
 
 | | `immediate` | `batch` |
 |---|---:|---:|
-| knee | ~700k deliveries/s | **~2–3M deliveries/s** |
-| p50 there | 85.9 ms | **0.048–0.103 ms** |
-| kernel share | 92–94% | 85–89% |
+| clean knee | ~700k deliveries/s | **2M measured, 3M observed** |
+| p50 at 1.4M/s | 460.1 ms | **0.031 ms** |
+| p99.9 at 500k/s | 12.328 ms | **0.382 ms** |
+| kernel share | 92–94% | 86–93%, falling as load rises |
 
-The `immediate` knee was **a property of the design, not the machine**: at the
-same offered load and the same ~98% of one core, the two modes report p50
-85.9 ms and 0.021 ms. Full tables, method, and caveats are in
-`netbench/README.md`.
+The `immediate` knee was **a property of the design, not the machine** — at
+1.4M deliveries/s both modes moved the same 28M frames at 100% of one core,
+and only the latency differed, by a factor of 15,000. Measured twice in
+separate sessions; the `batch` p50 column reproduced to the third decimal.
+Full tables, method, and caveats are in `netbench/README.md`.
 
 ## Protocol
 
@@ -154,16 +156,25 @@ measurement rather than from writing the code.
    recipient's buffer during the walk, then flush once at the end of the epoll
    batch. Sending inline holds the event loop inside syscalls while events pile
    up behind it, and the backlog — not CPU exhaustion — is what produces the
-   collapse: at the same offered load and the same ~98% of one core, inline
-   sending reports p50 **85.9 ms** and batched sending **0.021 ms**. Batching
-   also gets *better* under load, because more messages accumulate per batch
-   and coalesce into one `send()`. And it dissolves lesson 5b outright: with
-   the flush deferred, a send failure can no longer doom a connection while the
-   member set is being iterated.
+   collapse.
+
+   The cleanest statement of the cost is that **it is not a throughput cost at
+   all.** At the same offered load the two modes delivered 28,003,573 frames
+   (batched) and 28,015,074 frames (inline) — the same work, in the same
+   second — and reported p50 **0.031 ms** and **460.1 ms**. Inline `send()`
+   does not reduce what the server can push. It makes every delivery wait out
+   the backlog. And the damage appears in the tail long before the median: at
+   rate 5, at 79% of one core, both modes report p50 0.022 ms while the p99.9
+   is 0.382 ms batched and **12.328 ms** inline.
+
+   Batching also gets *better* under load, because more messages accumulate per
+   batch and coalesce into one `send()`. And it dissolves lesson 5b outright:
+   with the flush deferred, a send failure can no longer doom a connection
+   while the member set is being iterated.
 
    This one was found by asking whether the baseline was a fair opponent for
    io_uring. It was not — publishing the inline number would have credited
-   io_uring with a 4× win that plain epoll could take for itself.
+   io_uring with a win that plain epoll could take for itself.
 
 ### The bug worth the whole exercise
 
