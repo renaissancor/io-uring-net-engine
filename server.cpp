@@ -13,6 +13,7 @@
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <signal.h>
 #include <unistd.h>
@@ -50,7 +51,15 @@ enum : uint16_t {
 static constexpr size_t k_header_size  = sizeof(wire_header);
 static constexpr size_t k_max_payload  = 1024;
 static constexpr size_t k_send_cap     = 256 * 1024;   // backpressure limit
-static constexpr size_t k_max_conns    = 4096;
+// Runtime, not constexpr, because the load generator needs to push past it.
+// CHAT_MAX_CONNS raises the cap; RLIMIT_NOFILE must be raised to match, or the
+// accept path just trades a polite refusal for the EMFILE livelock (LESSON 6).
+static size_t g_max_conns = 4096;
+
+// Above a few thousand connections the per-accept log line is itself the
+// bottleneck: it is a syscall per connection on a line-buffered stdout, and it
+// makes the server look slow when the measurement is really measuring printf.
+static bool g_quiet = false;
 
 // ------------------------------------------------------------------- state
 
@@ -331,7 +340,7 @@ static void on_accept(int listen_fd) {
             break;
         }
 
-        if (g_conns.size() >= k_max_conns) {
+        if (g_conns.size() >= g_max_conns) {
             std::printf("[drop] connection cap reached, refusing fd=%d\n", fd);
             ::close(fd);
             continue;
@@ -355,10 +364,14 @@ static void on_accept(int listen_fd) {
         c.fd = fd;
         g_conns.emplace(fd, std::move(c));
 
-        char ip[INET_ADDRSTRLEN]{};
-        ::inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
-        std::printf("[conn] fd=%d from %s:%u (total %zu)\n",
-                    fd, ip, ntohs(addr.sin_port), g_conns.size());
+        if (!g_quiet) {
+            char ip[INET_ADDRSTRLEN]{};
+            ::inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+            std::printf("[conn] fd=%d from %s:%u (total %zu)\n",
+                        fd, ip, ntohs(addr.sin_port), g_conns.size());
+        } else if ((g_conns.size() % 1000) == 0) {
+            std::printf("[conn] total %zu\n", g_conns.size());
+        }
     }
 }
 
@@ -453,6 +466,38 @@ int main(int argc, char** argv) {
     if (const char* sb = ::getenv("CHAT_SNDBUF")) {
         g_sndbuf = std::atoi(sb);
         std::printf("[cfg ] SO_SNDBUF forced to %d B on accepted sockets\n", g_sndbuf);
+    }
+
+    if (const char* mc = ::getenv("CHAT_MAX_CONNS")) {
+        g_max_conns = static_cast<size_t>(std::atoll(mc));
+        std::printf("[cfg ] connection cap = %zu\n", g_max_conns);
+    }
+    if (const char* q = ::getenv("CHAT_QUIET"))
+        g_quiet = (std::atoi(q) != 0);
+
+    // The connection cap is meaningless without the fd budget behind it: the
+    // soft RLIMIT_NOFILE defaults to 1024, so a 10k cap without this just
+    // reaches LESSON 6's EMFILE path 9k connections early. Raising the soft
+    // limit toward the hard limit needs no privilege.
+    {
+        rlimit rl{};
+        if (::getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+            const rlim_t want = static_cast<rlim_t>(g_max_conns) + 64;
+            const rlim_t target = (want > rl.rlim_max) ? rl.rlim_max : want;
+            if (rl.rlim_cur < target) {
+                rlimit next = rl;
+                next.rlim_cur = target;
+                if (::setrlimit(RLIMIT_NOFILE, &next) == 0)
+                    rl.rlim_cur = target;
+                else
+                    std::perror("setrlimit");
+            }
+            std::printf("[cfg ] RLIMIT_NOFILE soft = %llu\n",
+                        static_cast<unsigned long long>(rl.rlim_cur));
+            if (rl.rlim_cur < want)
+                std::printf("[warn] fd limit below cap; EMFILE expected near %llu conns\n",
+                            static_cast<unsigned long long>(rl.rlim_cur));
+        }
     }
 
     g_ep = ::epoll_create1(EPOLL_CLOEXEC);

@@ -1,2 +1,4 @@
 server
+loadgen
 *.o
+.omc/

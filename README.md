@@ -39,6 +39,75 @@ python3 client.py slowreader --clients 8 --messages 300
 | `slowreader` | `[drop] fd=7 send buffer over cap (261770 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
 
+## loadgen — connection scale
+
+`loadgen.cpp` is the C++ load generator. Unlike the rest of this repo it is
+**not throwaway**: it has to measure the io_uring server too, so the framing
+constants are parameterised rather than hardcoded. When this study build is
+deleted, `loadgen.cpp` moves to `iouring-net-server`.
+
+Single-threaded on purpose. Scale out with processes and machines, not
+threads — same core scaling, no shared state, and it forces the multi-box
+design from day one.
+
+```bash
+make loadgen
+CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000
+./loadgen --conns 10000 --per-room 10 --hold 10
+./loadgen --conns 40000 --per-room 10 --src-ips 4 --hold 20
+```
+
+### Verified results
+
+| run | result |
+|---|---|
+| 10k conns, 1 source IP | 10,000 established, 0 failed, 0.10s, 0 attrition over 10s |
+| 40k conns, 1 source IP | **28,232 established, 11,768 × `EADDRNOTAVAIL`** |
+| 40k conns, 4 source IPs | 40,000 established, 0 failed, 0.45s, 0 attrition over 20s |
+| `load` 30×30 after the above | 27,495 frames — no regression from the server changes |
+
+Server RSS at 40k held connections: ~17.8 MB (~450 B/conn userspace). Kernel
+socket buffers are not in RSS; that is the number that actually scales, hence
+the small `SO_RCVBUF`/`SO_SNDBUF` defaults on both sides.
+
+### What the numbers say
+
+**28,232 is not a coincidence.** `net.ipv4.ip_local_port_range` is
+`32768 60999`, and `60999 - 32768 + 1 = 28232`. A connection is identified by
+the 4-tuple `(src IP, src port, dst IP, dst port)`; against a single server
+`IP:port` the last two are fixed, so one source IP can only produce as many
+distinct tuples as it has ephemeral ports.
+
+This is a **client-side** limit and always was. The server's local port stays
+9000 for every connection — `accept()` returns a new fd, not a new port — so
+the server side varies `(src IP, src port)` and is bounded by fds and memory,
+not ports. Switching to UDP would not have changed this in either direction.
+
+Ephemeral ports are a per-source-IP kernel resource, so extra *processes* on
+one box do not buy extra ports. `--src-ips` binds across 127.0.0.1..n (Linux
+treats all of 127.0.0.0/8 as local); past that it takes more machines.
+
+Three things that had to be right before any of this worked:
+
+- **`RLIMIT_NOFILE`** on *both* sides. The 1024 default means the run dies at
+  the 1024th connection, and on the server it reaches the EMFILE livelock of
+  lesson 6 nine thousand connections early.
+- **`SO_LINGER{1,0}`** on the client. The active closer eats TIME_WAIT, and
+  that is the load generator: 28k sockets held for 60s means the *next* run
+  fails for no visible reason. The runs above are back-to-back with no wait.
+  A real client must never do this — RST discards the send buffer.
+- **Room sharding.** Join broadcasts a notice to the room, so N clients in one
+  room is O(N²) frames. 40k in a single room is 800M notices and the connect
+  phase never finishes. `--per-room` keeps fan-out out of a connection-scale
+  test; fan-out is a separate experiment with its own knob.
+
+### Not built yet (phase 2)
+
+Message send, latency histogram. The design notes are at the bottom of
+`loadgen.cpp`: open-loop scheduling, latency measured against the *intended*
+send time (coordinated omission), fixed filler strings per size class, and a
+self-lag histogram so client saturation cannot be misread as server queueing.
+
 ## Protocol
 
 4-byte header, little-endian, no byte swapping (same shortcut the real project
