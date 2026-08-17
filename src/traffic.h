@@ -1,5 +1,19 @@
 // traffic.h — the measuring phase: open-loop send schedule, latency and
-// self-lag histograms, and the per-run dump that merge.py consumes.
+// self-lag histograms, the verdict, and the per-run dump merge.py consumes.
+//
+// The file to read most carefully. Coordinated omission is possible in both
+// directions here and both have been live defects:
+//   - send side: the payload carries the INTENDED send time, not the actual
+//     one. Measuring from the actual send deletes every delay the client
+//     caused, which is where the tail lives. Handled from day one.
+//   - receive side: recv_ts is stamped per socket, NOT once per epoll batch.
+//     Batch-stamping dates the late frames from when the walk began and
+//     deletes exactly the delay saturation caused. This was a real defect and
+//     it under-reported p50 by 136x at 3M deliveries/s. See
+//     design/2026-08-17-three-instrument-defects.md.
+//
+// The self-lag histogram guards the first and is blind to the second by
+// construction. That is the argument for fleet mode.
 #pragma once
 
 #include <cstdint>

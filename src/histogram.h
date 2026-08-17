@@ -1,5 +1,14 @@
 // histogram.h — fixed-bucket latency histogram, and the two ways it leaves
 // this process: printed for a human, dumped for merge.py.
+//
+// The dump is not a convenience. Percentiles from separate processes cannot be
+// combined — the mean of two p99s is not the fleet p99 and is not any other
+// statistic either — so the only correct fleet merge is over the raw buckets,
+// and that is what the dump hands to merge.py.
+//
+// A percentile that lands inside the overflow count is reported as "beyond
+// range" rather than invented, because the alternative is a number that looks
+// like a measurement and is a guess.
 #pragma once
 
 #include <cstdint>

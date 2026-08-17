@@ -1,4 +1,9 @@
 // config.h — command line surface. One struct, one parser, no globals.
+//
+// Every knob lives here so that adding one does not mean touching a phase.
+// The one field worth reading the comment on is src_ip_base: it is explicit
+// rather than derived from --node because deriving it is correct on one box
+// and silently wrong across boxes, which is the case fleet mode exists for.
 #pragma once
 
 #include <cstdint>

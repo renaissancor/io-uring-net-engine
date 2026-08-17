@@ -1,4 +1,8 @@
 // conn.h — per-connection state and the process-wide clock and stop flag.
+//
+// Shared by both phases so they cannot drift into two definitions of what a
+// connection is. Nothing subtle lives here; if something subtle appears, it
+// probably belongs in the phase that needs it.
 #pragma once
 
 #include <csignal>

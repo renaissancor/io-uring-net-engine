@@ -38,6 +38,10 @@ So they live outside both, keep the STL, and switch protocols with a flag.
 
 ## Layout
 
+Code map with reading order, what each unit owns and what it fails on:
+[`doc/INDEX.md`](doc/INDEX.md). Dated findings that outlive the numbers:
+[`design/`](design/).
+
 ```
 src/wire.*        frame header, the study/iouring seam, blob layout
 src/config.*      the whole command line, in one struct
@@ -52,6 +56,9 @@ src/main.cpp      argument handling and the two phase calls
 fleet.py          run N loadgen processes, assign identities, merge
 merge.py          add raw histograms; percentiles cannot be averaged
 chatcli.py        the judge: content correctness, not throughput
+
+doc/INDEX.md      code map: what each unit owns and breaks on
+design/           dated findings; the traps outlive the numbers
 ```
 
 ## Build and run

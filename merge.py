@@ -19,7 +19,7 @@ one saturated node inflates the numbers everyone else contributed to.
 import sys
 from collections import Counter
 
-LAG_FLOOR_NS = 1_000_000   # keep in step with loadgen.cpp
+LAG_FLOOR_NS = 1_000_000   # must track k_lag_floor_ns in src/traffic.cpp
 
 
 class Hist:

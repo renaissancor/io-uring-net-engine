@@ -1,4 +1,14 @@
 // wire.h — frame layout shared by both target servers.
+//
+// Owns: the 4-byte header, the study/iouring length-convention seam, and the
+// 20-byte measurement blob carried inside a chat payload.
+//
+// Two things here fail silently rather than loudly, which is why they are in
+// one file and commented at length below:
+//   - --proto backwards desynchronises the stream by four bytes per frame.
+//     Every subsequent parse is garbage and nothing reports an error.
+//   - the blob's node stamp is the only thing keeping another loadgen
+//     process's clock out of this process's histogram.
 #pragma once
 
 #include <cstddef>

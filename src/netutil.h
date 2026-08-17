@@ -1,4 +1,14 @@
 // netutil.h — socket setup and the non-blocking read/write helpers.
+//
+// Three settings in here had to be right before any measurement was possible,
+// and each was invisible when wrong:
+//   - SO_RCVBUF must be set BEFORE connect(). Set after, it is cosmetic: the
+//     receive window is negotiated during the handshake.
+//   - IP_BIND_ADDRESS_NO_PORT is what keeps a bound socket 4-tuple-aware.
+//     Without it, binding a source address caps the socket at the ephemeral
+//     range per source IP even when destinations differ.
+//   - RLIMIT_NOFILE, raised at startup. The 1024 default makes a run die at
+//     the 1024th connection and look like a network problem.
 #pragma once
 
 #include <netinet/in.h>

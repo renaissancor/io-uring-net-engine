@@ -1,0 +1,91 @@
+# netbench — code map
+
+`README.md` is the method: what is measured, why it is measured that way, and
+what the numbers currently are. **This file is the code map**: what each unit
+owns, what it fails on, and the order to read them in.
+
+The two are deliberately separate. The method outlives any particular
+implementation of it — if this were rewritten in Rust tomorrow the README would
+survive and this file would not.
+
+> **Not a build-from-spec tree.** `iouring-net-lib`'s `doc/` is normative: an
+> agent implements each unit from its spec without opening the source, so those
+> files carry exact API blocks and "done when" gates. This is a measuring
+> instrument with no external callers and one build target, so copying that
+> shape would be ceremony. What transfers is the part that pays: knowing which
+> file to open, and knowing what each one gets wrong.
+
+## Reading order
+
+Read in this order the first time. Each tier only depends on tiers above it.
+
+### Tier 0 — vocabulary
+
+| unit | owns | the trap it carries |
+|---|---|---|
+| `src/wire.h/.cpp` | 4-byte frame header, the study/iouring length-convention seam, the 20-byte blob layout | Getting `--proto` backwards does not fail loudly — it desynchronises by 4 bytes per frame. The blob's node stamp is the only thing keeping another process's clock out of the histogram. |
+| `src/conn.h/.cpp` | per-connection state, `now_ns()`, the stop flag | Nothing subtle. It is here so the phases share one definition rather than two. |
+| `src/config.h/.cpp` | the entire command line, in one struct | `--src-ip-base` is explicit rather than derived from `--node` on purpose; deriving it is correct on one box and silently wrong across boxes. |
+
+### Tier 1 — measurement primitives
+
+| unit | owns | the trap it carries |
+|---|---|---|
+| `src/histogram.h/.cpp` | 1 µs buckets to 1 s, printing, and the sparse dump `merge.py` reads | Percentiles from separate processes **cannot be combined**. The dump exists because only raw buckets can be added. A percentile falling in the overflow is reported as "beyond range", never invented. |
+| `src/corpus.h/.cpp` | realistic chat text, built once from a fixed seed | The seed is fixed so two nodes of one fleet put identical bytes on the wire. Do not make it time-based. |
+| `src/netutil.h/.cpp` | fd limits, source-IP binding, non-blocking read/write | `SO_RCVBUF` must be set **before** `connect()` — afterwards it is cosmetic, the window was already negotiated. `IP_BIND_ADDRESS_NO_PORT` is what keeps a bound socket 4-tuple-aware. |
+
+### Tier 2 — the two phases
+
+They are separate units because they fail for entirely unrelated reasons, and
+a run that dies in one tells you nothing about the other.
+
+| unit | owns | fails on |
+|---|---|---|
+| `src/connect.h/.cpp` | establish N connections, shard into rooms | ephemeral port exhaustion (`EADDRNOTAVAIL` at 28,232 per source IP), `RLIMIT_NOFILE`, listen backlog, and O(N²) join notices if rooms are too large |
+| `src/traffic.h/.cpp` | open-loop send schedule, latency + self-lag sampling, the verdict, the dump | coordinated omission in **both** directions, and the verdict thresholds. The largest file and the one to read most carefully. |
+
+### Tier 3 — driver
+
+| unit | owns |
+|---|---|
+| `src/main.cpp` | argument handling, fd limit, and the two phase calls |
+
+### Outside the C++ tree
+
+| unit | owns | why it is not C++ |
+|---|---|---|
+| `fleet.py` | assigns node ids, source-IP ranges and dump paths across N processes, then merges | orchestration has no performance requirement, and this is the only check the instrument has against itself |
+| `merge.py` | adds raw histogram buckets, recomputes the verdict fleet-wide | same; runs once after the measurement, never during it |
+| `chatcli.py` | the **judge** — correct body, correct sender, exactly once | a different question entirely. `loadgen` would report a clean 100% while every message arrived corrupt. |
+
+## Where the reasoning lives
+
+| kind | location |
+|---|---|
+| method, current numbers, operating rules | `README.md` |
+| what each unit owns and breaks on | this file |
+| non-obvious *local* decisions | inline, next to the code — ~22% of lines |
+| dated findings that outlive the numbers | `design/` |
+| the decision behind a specific change | the commit that made it (trailers: `Constraint:`, `Rejected:`, `Directive:`) |
+
+Inline comments are the default and should stay that way. A decision that only
+makes sense while looking at the surrounding ten lines belongs in those ten
+lines; moving it to a doc file guarantees it goes stale, because nobody edits
+the doc when they edit the code.
+
+`design/` is for the opposite case: findings whose value survives the code
+being deleted. Today's entry —
+[`2026-08-17-three-instrument-defects.md`](../design/2026-08-17-three-instrument-defects.md)
+— is the worked example. The baseline table in the README will be rewritten the
+day the io_uring server lands; the three traps in that file will still be true.
+
+## If you change one thing, change it here too
+
+- **Blob layout** (`wire.h`) — `merge.py` does not parse it, but `chatcli.py`
+  and the `README.md` protocol section both describe it.
+- **Verdict thresholds** (`traffic.cpp`) — `merge.py` reimplements them for the
+  fleet-wide verdict. `LAG_FLOOR_NS` there must track `k_lag_floor_ns` here.
+- **Dump format** (`histogram.cpp`, `traffic.cpp`) — `merge.py` parses it.
+- **Room/nick naming** (`connect.cpp`) — the node namespacing is what keeps
+  fleet rooms disjoint; changing the scheme breaks that silently, not loudly.
