@@ -47,12 +47,14 @@ src/wire.*        frame header, the study/iouring seam, blob layout
 src/config.*      the whole command line, in one struct
 src/conn.h        per-connection state, clock, stop flag
 src/corpus.*      realistic chat text, built once at startup
+src/corpus_data.* the message pool, bucketed by byte length (generated)
 src/histogram.*   1us buckets, printing, and the dump merge.py reads
 src/netutil.*     fd limits, source binding, non-blocking read/write
 src/connect.*     phase 1: establish and shard into rooms
 src/traffic.*     phase 2: open-loop schedule, sampling, verdict
 src/main.cpp      argument handling and the two phase calls
 
+tools/mkcorpus.py .corpus-src/*.txt -> src/corpus_data.cpp
 fleet.py          run N loadgen processes, assign identities, merge
 merge.py          add raw histograms; percentiles cannot be averaged
 chatcli.py        the judge: content correctness, not throughput
@@ -88,8 +90,13 @@ Both take `--proto study|iouring`.
 
 `--size` / `--size-mix` send fixed-length filler. `--corpus` sends realistic
 chat text instead — 4096 lines built once from a fixed seed, with the length
-distribution conversations actually have (mostly reactions, a thin tail of
-paragraphs; measured 1–445 bytes, mean 34.9).
+distribution conversations actually have: measured 2–979 bytes, mean 51.7,
+39.7% reactions and 34.4% one-liners.
+
+The point of that shape is the tail. Messages over 200 bytes are **3.8% of
+frames but 25.0% of bytes**, which is the property a fixed `--size` cannot
+reproduce at any single value — pick 64 and you understate the volume, pick 512
+and you understate the frame count.
 
 The no-RNG-in-the-hot-loop rule is unchanged, only front-loaded: the corpus is
 assembled at startup and the send path does one index and returns a reference.
@@ -104,7 +111,33 @@ mix, not when comparing two servers.
 The text is Korean, so it is UTF-8 multi-byte — one character is three bytes.
 That is deliberate: the protocol's invariant is the 1 KB byte cap with the
 character limit derived from it, and an ASCII corpus would leave that
-distinction untested.
+distinction untested. The `k_xlong` class exists to sit right under that cap
+(902–980 bytes) rather than approach it by accident, though it is only 0.3% of
+draws: it is the boundary case, and a corpus that served it often would be
+measuring the cap instead of chat.
+
+The pool itself is generated, not hand-edited:
+
+```bash
+python3 tools/mkcorpus.py     # .corpus-src/*.txt -> src/corpus_data.cpp
+```
+
+`.corpus-src/` is the authoring format — one message per line, plain UTF-8 —
+and `src/corpus_data.cpp` is the generated artefact. Both are committed, so the
+text is stored twice; the alternative is a generator with no inputs or a Python
+step in a C++ build, and neither is worth saving 292 KB. The script buckets
+by **byte** length rather than by filename, because a person writing Korean
+counts characters while the protocol counts bytes and the two differ by 3x.
+
+It also reports a 4-gram diversity figure per bucket, which is there for a
+specific failure: asking a generator for "400 unique lines" is satisfied by 400
+permutations of one sentence with the nouns swapped. Distinct lines are cheap,
+distinct language is not, and only the n-gram measure separates them. That
+figure is sampled at a **fixed 4-gram count**, not a fixed line count — the
+ratio falls as any natural-language sample grows, so comparing an 1997-line
+bucket of 32-byte lines against a 50-line bucket of 959-byte lines is only
+meaningful once the sample size is held constant. All five buckets currently
+measure 0.89–0.91.
 
 `make asan` builds a sanitised binary for correctness checks at small
 `--conns`. Do not measure with it — ASan roughly halves throughput, so the

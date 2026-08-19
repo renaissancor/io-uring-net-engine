@@ -12,9 +12,17 @@
 // reproducible cannot support a claim about a change.
 //
 // Lengths follow how chat actually distributes: overwhelmingly short, with a
-// thin tail of paragraphs. That matters because frame size decides which path
-// the kernel takes — small frames are syscall-bound, frames over the MSS take
-// the segmentation path — so a uniform 64 bytes exercises exactly one of them.
+// thin tail of paragraphs. That matters because frame size decides how much
+// work each delivery is, and a uniform 64 bytes exercises one point on that
+// curve and calls it the answer.
+//
+// It does NOT decide segmentation. The study server caps a payload at 1024
+// bytes, so k_max_blob leaves the longest line at 988 — under the 1448-byte
+// MSS, meaning no single chat frame is ever segmented. What crosses the MSS is
+// the server's batched flush, where many frames coalesce into one send(). An
+// earlier version of this comment claimed the corpus reached the segmentation
+// path on its own; it cannot, and the distinction matters when reading which
+// mode a measurement is exercising.
 //
 // Text is Korean, so it is also UTF-8 multi-byte: one character is three
 // bytes. That is deliberate. The protocol's invariant is the 1 KB byte cap and
@@ -29,9 +37,19 @@
 
 class corpus {
 public:
-    // entries is how many distinct lines to pre-build. A few thousand is
-    // enough that the traffic does not visibly repeat within a run, and small
-    // enough to stay in cache.
+    // entries is how many lines to materialise, sampled from the pool in
+    // corpus_data.cpp. Pool size and entries are separate knobs on purpose:
+    // the pool is .rodata and costs binary bytes, entries is resident memory
+    // the send path walks, and a few thousand entries keeps that walk in cache.
+    //
+    // entries exceeding the pool size does not mean a run repeats itself in
+    // any way that matters. At 4096 entries against the current 3323-line pool
+    // the build is 59% distinct, and the repetition is concentrated in the
+    // reaction class by design: 250 tiny lines serve 45% of draws, because a
+    // real room really does say the same six things all day. The classes that
+    // carry bytes barely repeat -- mid draws ~985 lines from 876, long draws
+    // ~29 from 150. Raise entries if you want a longer non-repeating stretch;
+    // the cost is resident memory, not fidelity.
     void build(uint32_t seed, size_t entries, size_t max_bytes);
 
     // O(1), no allocation, no branching on content.
