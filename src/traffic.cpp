@@ -76,10 +76,22 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
     if (off) c.in.erase(0, off);
 }
 
+// Verdict constants. They also travel in the --dump header so merge.py
+// recomputes the fleet-wide verdict from the values this binary actually
+// used, rather than tracking them by hand. Rationale for the floor is at
+// the verdict itself, bottom of this file.
+constexpr int64_t k_lag_floor_ns = 1'000'000;   // 1ms
+constexpr int     k_lag_ratio    = 5;
+
 bool dump_stats(const config& cfg, const traffic_stats& st)
 {
     std::FILE* f = std::fopen(cfg.dump.c_str(), "w");
     if (!f) return false;
+    // Format version plus the verdict constants. merge.py refuses a dump
+    // without this line: the alternative is misparsing a stale format, or
+    // recomputing the fleet verdict with thresholds this binary never used.
+    std::fprintf(f, "netbench-dump v1 lag_floor_ns=%lld lag_ratio=%d\n",
+                 static_cast<long long>(k_lag_floor_ns), k_lag_ratio);
     std::fprintf(f, "node %u\n", cfg.node);
     std::fprintf(f, "conns %d\nper_room %d\nrate %.6f\nduration %d\n",
                  cfg.conns, cfg.per_room, cfg.rate, cfg.duration);
@@ -397,17 +409,16 @@ void report(const config& cfg, const traffic_stats& st)
     bool a = false, b = false;
     const int64_t lat99 = st.latency.pct(0.99, a);
     const int64_t lag99 = st.self_lag.pct(0.99, b);
-    constexpr int64_t k_lag_floor_ns = 1'000'000;   // 1ms
     if (st.latency.total == 0) {
         std::printf("[VOID] no latency samples\n");
-    } else if (lag99 * 5 > lat99 && lag99 >= k_lag_floor_ns) {
+    } else if (lag99 * k_lag_ratio > lat99 && lag99 >= k_lag_floor_ns) {
         std::printf("[VOID] self-lag p99 (%.3fms) is not small against "
                     "latency p99 (%.3fms) — this run measured the client, "
                     "not the server. Lower --rate or --conns, or add "
                     "processes and machines.\n",
                     static_cast<double>(lag99) / 1e6,
                     static_cast<double>(lat99) / 1e6);
-    } else if (lag99 * 5 > lat99) {
+    } else if (lag99 * k_lag_ratio > lat99) {
         std::printf("[WARN] self-lag p99 (%.3fms) is a large fraction of "
                     "latency p99 (%.3fms), but is under 1ms in absolute "
                     "terms. Read the server p99 as >= %.3fms; the run is "

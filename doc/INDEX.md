@@ -86,8 +86,16 @@ day the io_uring server lands; the three traps in that file will still be true.
 
 - **Blob layout** (`wire.h`) — `merge.py` does not parse it, but `chatcli.py`
   and the `README.md` protocol section both describe it.
-- **Verdict thresholds** (`traffic.cpp`) — `merge.py` reimplements them for the
-  fleet-wide verdict. `LAG_FLOOR_NS` there must track `k_lag_floor_ns` here.
-- **Dump format** (`histogram.cpp`, `traffic.cpp`) — `merge.py` parses it.
+- **Verdict thresholds** (`traffic.cpp`) — `merge.py` recomputes the verdict
+  fleet-wide, but the constants travel in the dump header
+  (`netbench-dump v1 lag_floor_ns=… lag_ratio=…`), so it reads them instead of
+  tracking them by hand. What still has to stay in step is the *shape* of the
+  verdict expression, and one asymmetry is deliberate: `merge.py`'s
+  `or lag_beyond` term compensates for its `pct()` returning a floor for
+  beyond-range percentiles where the C++ `pct()` returns the range limit.
+- **Dump format** (`histogram.cpp`, `traffic.cpp`) — `merge.py` parses it, and
+  refuses a dump whose first line is not the `netbench-dump v1` header. Bump
+  the version when the format changes so a stale dump fails loudly instead of
+  misparsing.
 - **Room/nick naming** (`connect.cpp`) — the node namespacing is what keeps
   fleet rooms disjoint; changing the scheme breaks that silently, not loudly.

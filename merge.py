@@ -19,8 +19,6 @@ one saturated node inflates the numbers everyone else contributed to.
 import sys
 from collections import Counter
 
-LAG_FLOOR_NS = 1_000_000   # must track k_lag_floor_ns in src/traffic.cpp
-
 
 class Hist:
     def __init__(self):
@@ -57,11 +55,31 @@ class Hist:
         return len(self.counts) and max(self.counts) * self.bucket_ns, True
 
 
-def parse(path, lat, lag, scalars):
+def parse(path, lat, lag, scalars, meta):
     with open(path) as f:
         lines = f.read().splitlines()
 
-    i = 0
+    # The first line names the dump format and carries the verdict constants
+    # the producing binary used. Refusing anything else is the point: a dump
+    # from a different loadgen would otherwise misparse silently, and a fleet
+    # verdict recomputed with thresholds no binary used describes nothing.
+    if not lines or not lines[0].startswith("netbench-dump "):
+        sys.exit(f"{path}: no 'netbench-dump' header — written by an older "
+                 f"loadgen? Regenerate the dump or use the matching merge.py.")
+    head = lines[0].split()
+    if head[1] != "v1":
+        sys.exit(f"{path}: dump format {head[1]}; this merge.py reads v1")
+    kv = dict(p.split("=", 1) for p in head[2:])
+    for key in ("lag_floor_ns", "lag_ratio"):
+        if key not in kv:
+            sys.exit(f"{path}: dump header is missing {key}")
+        val = int(kv[key])
+        if meta.setdefault(key, val) != val:
+            sys.exit(f"{path}: {key}={val} but an earlier dump said "
+                     f"{meta[key]} — these runs used different loadgen "
+                     f"binaries and their verdicts are not comparable")
+
+    i = 1
     while i < len(lines):
         parts = lines[i].split()
         if not parts:
@@ -109,9 +127,9 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("usage: merge.py <dump> [<dump> ...]")
 
-    lat, lag, scalars = Hist(), Hist(), {}
+    lat, lag, scalars, meta = Hist(), Hist(), {}, {}
     for path in sys.argv[1:]:
-        parse(path, lat, lag, scalars)
+        parse(path, lat, lag, scalars, meta)
 
     nodes = scalars.get("nodes", [])
     if len(set(nodes)) != len(nodes):
@@ -156,18 +174,28 @@ def main():
         print("[fleet] foreign-stamped frames were excluded from the histogram; "
               "rooms are supposed to be node-private and were not.")
 
+    # Thresholds come from the dump header, so this verdict is by construction
+    # the one the binaries themselves would have reached; see traffic.cpp for
+    # the rationale behind the floor and the ratio.
+    #
+    # The 'or lag_beyond' has no counterpart in traffic.cpp because it needs
+    # none there: the C++ pct() returns the 1s range limit for a beyond-range
+    # percentile, which is already over any sane floor. Our pct() returns the
+    # highest occupied bucket — a value that can sit under the floor even when
+    # the true p99 is past 1s — so beyond-range must clear the floor explicitly.
+    lag_floor, lag_ratio = meta["lag_floor_ns"], meta["lag_ratio"]
     lat99, lat_beyond = lat.pct(0.99)
     lag99, lag_beyond = lag.pct(0.99)
     if lat.total == 0:
         print("[VOID] no latency samples")
-    elif lag99 * 5 > lat99 and (lag99 >= LAG_FLOOR_NS or lag_beyond):
+    elif lag99 * lag_ratio > lat99 and (lag99 >= lag_floor or lag_beyond):
         print(f"[VOID] fleet self-lag p99 ({lag99/1e6:.3f}ms) is not small "
               f"against latency p99 ({lat99/1e6:.3f}ms) — this run measured "
               f"the fleet, not the server. Add processes or machines.")
-    elif lag99 * 5 > lat99:
+    elif lag99 * lag_ratio > lat99:
         print(f"[WARN] fleet self-lag p99 ({lag99/1e6:.3f}ms) is a large "
-              f"fraction of latency p99 ({lat99/1e6:.3f}ms), but is under 1ms "
-              f"in absolute terms. Read the server p99 as "
+              f"fraction of latency p99 ({lat99/1e6:.3f}ms), but is under "
+              f"{lag_floor/1e6:g}ms in absolute terms. Read the server p99 as "
               f">= {(lat99-lag99)/1e6:.3f}ms; the run is usable, the headroom "
               f"is not.")
     else:
