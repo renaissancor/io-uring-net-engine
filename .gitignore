@@ -4,3 +4,4 @@ loadgen-asan
 .omc/
 src/*.o
 src/*.d
+__pycache__/
