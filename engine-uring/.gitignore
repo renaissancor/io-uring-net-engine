@@ -1,0 +1,77 @@
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+out/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+# CMake user-local preset overrides — never committed (per CMake convention)
+CMakeUserPresets.json
+
+# IDE / editors
+.idea/
+.vscode/
+.zed/
+.helix/
+*.swp
+*.swo
+*~
+.cache/
+.ccls-cache/
+.clangd/
+# ctags / cscope
+tags
+TAGS
+cscope.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling state (kept out of source control by default)
+.omc/
+.claude/
+
+# Coverage / sanitizers / perf
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+perf.data*
+core
+core.*
+vgcore.*
+
+# Local secrets / scratch
+.env
+.env.*
+scratch/
+.worktrees/
+
+# Merge / patch artifacts
+*.orig
+*.rej
+*.bak
+
+# Python tooling (scripts/ may grow Python helpers)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Fuzzing artifacts (libFuzzer crash inputs — see docs/08 v2 plan)
+crash-*
+leak-*
+oom-*
+timeout-*

@@ -1,0 +1,24 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(Threads REQUIRED)
+find_dependency(fmt @FMT_FLOOR@ CONFIG REQUIRED)
+find_dependency(tl-expected CONFIG REQUIRED)
+
+if(NOT TARGET liburing::uring)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LIBURING IMPORTED_TARGET GLOBAL liburing>=@LIBURING_FLOOR@)
+  if(LIBURING_FOUND AND NOT TARGET liburing::uring)
+    add_library(liburing::uring ALIAS PkgConfig::LIBURING)
+  endif()
+endif()
+
+if(NOT TARGET liburing::uring)
+  message(FATAL_ERROR
+    "iouring_net requires liburing>=@LIBURING_FLOOR@, but liburing::uring is unavailable.")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/iouring_netTargets.cmake")
+
+check_required_components(iouring_net)

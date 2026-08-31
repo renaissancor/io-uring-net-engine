@@ -1,0 +1,40 @@
+name: floor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Load-bearing CI gate: Ubuntu 22.04 + g++-12 + FetchContent for every
+# dep below floor. Branch protection requires this job to pass.
+# Without it, "works on noble" silently rots into "doesn't work on
+# 22.04" because no one tests the lower bound. See
+# doc/07-ci-and-reproducibility.md § "Load-bearing CI floor job".
+
+jobs:
+  ubuntu-2204-gcc12:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo bash scripts/setup.sh
+
+      - name: Configure (g++-12 floor preset)
+        run: cmake --preset floor
+
+      - name: Build
+        run: cmake --build --preset floor
+
+      - name: Test
+        run: ctest --preset floor
+
+      - name: Emit version snapshot
+        run: BUILD_DIR=build/floor bash scripts/emit-snapshot.sh build/floor/version-snapshot.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: version-snapshot-floor
+          path: build/floor/version-snapshot.txt
+          retention-days: 90
