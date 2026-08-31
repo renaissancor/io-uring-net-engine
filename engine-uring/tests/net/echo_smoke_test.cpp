@@ -246,7 +246,19 @@ void wake_pending_accept(i32 port) noexcept {
     // Server's busy-poll exits on stop check, but a queued accept SQE
     // is still parked in the kernel. A throwaway connect-then-close
     // satisfies it so the io_uring_queue_exit path is reached.
-    int fd = connect_loopback(port);
+    //
+    // Deliberately NOT connect_loopback(): this connect races the server
+    // observing `stop` and closing the listener, and losing that race is
+    // fine — a refused connect means the server is already past the parked
+    // accept. Checking `== 0` here asserts the absence of a benign race
+    // (flaked as SIGTRAP on 2-vCPU CI runners under full-suite load).
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    LNX_CHECK(fd >= 0);
+    sockaddr_in addr{};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port        = htons(static_cast<u16>(port));
+    (void)::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
     ::close(fd);
 }
 
