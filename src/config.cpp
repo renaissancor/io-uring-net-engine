@@ -20,6 +20,9 @@ void usage()
         "  --src-ip-base <n>  first 127.0.0.x to bind   (default 1)\n"
         "  --node <id>        this process in a fleet   (default 0)\n"
         "  --dump <path>      write raw histograms for merge.py\n"
+        "  --server-pid <pid> sample the server's CPU over the traffic\n"
+        "                       window; answers whether the SERVER was at\n"
+        "                       its limit, which self-lag cannot\n"
         "  --inflight <n>     concurrent connects      (default 256)\n"
         "  --rcvbuf <bytes>   SO_RCVBUF, 0=default     (default 8192)\n"
         "  --sndbuf <bytes>   SO_SNDBUF, 0=default     (default 8192)\n"
@@ -71,6 +74,7 @@ bool parse_args(int argc, char** argv, config& cfg)
             if (!next_int(n) || n < 0) return false;
             cfg.node = static_cast<uint32_t>(n);
         }
+        else if (a == "--server-pid") { if (!next_int(cfg.server_pid)) return false; }
         else if (a == "--inflight")  { if (!next_int(cfg.inflight)) return false; }
         else if (a == "--rcvbuf")    { if (!next_int(cfg.rcvbuf))   return false; }
         else if (a == "--sndbuf")    { if (!next_int(cfg.sndbuf))   return false; }
@@ -86,6 +90,10 @@ bool parse_args(int argc, char** argv, config& cfg)
         std::fprintf(stderr,
                      "--src-ip-base %d with --src-ips %d runs past 127.0.0.255\n",
                      cfg.src_ip_base, cfg.src_ips);
+        return false;
+    }
+    if (cfg.server_pid < 0) {
+        std::fprintf(stderr, "--server-pid must not be negative\n");
         return false;
     }
     if (cfg.rate < 0 || cfg.duration < 0) {

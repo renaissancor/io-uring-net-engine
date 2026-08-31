@@ -76,6 +76,10 @@ CHAT_FLUSH=batch CHAT_MAX_CONNS=20000 CHAT_QUIET=1 ./server 9000  # in the study
 python3 fleet.py --nodes 3 --conns 3334 --rate 30 --duration 20
 python3 fleet.py --nodes 3 --conns 3334 --rate 30 -- --corpus
 
+# was the SERVER at its limit? nothing else here observes the server at all
+./loadgen --conns 10000 --rate 30 --server-pid $(pgrep -x server)
+python3 fleet.py --nodes 3 --conns 3334 --rate 30 -- --server-pid $(pgrep -x server)
+
 ./loadgen --help
 
 python3 chatcli.py interactive --nick alice --room lobby
@@ -85,6 +89,34 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 ```
 
 Both take `--proto study|iouring`.
+
+The study repo's `make` builds the **measurement** binary; `make asan` builds
+the sanitised one under a separate name. It was the other way round until
+2026-08-30, which meant the obvious command produced a server roughly half as
+fast with nothing in the output to say so.
+
+### Verdicts and exit codes
+
+`loadgen` and `merge.py` exit **3** when the verdict is `[VOID]` — the run
+produced numbers and they do not describe the server. `[ OK ]` and `[WARN]`
+both exit 0. Two things void a run: **fan-out drift** past ±5% of `--per-room`,
+checked first, because the offered load is then not the requested one (orphaned
+`loadgen` processes are the usual cause and they read as *higher* throughput —
+check `pgrep -x loadgen`); and **self-lag** too large against latency p99.
+
+`--server-pid` reports the server's CPU over the traffic window:
+
+```
+[srv ] server CPU 100% of one core (user 14% / kernel 86%) over the traffic window
+```
+
+**Read that line for its low values.** 100% of a core is *not* saturation here —
+this server held 100% from 3M to 10M deliveries/s, because a longer sweep
+batches more messages into each syscall. Under ~95% the run is definitively
+below the ceiling; at 100% you have learned almost nothing. The signal that
+works is a pair: achieved < offered with self-lag **small** means the server is
+the limit, with self-lag **large** means the client is. See
+[`design/2026-08-30-what-limits-the-server.md`](design/2026-08-30-what-limits-the-server.md).
 
 ### Payload: fixed length or real chat
 

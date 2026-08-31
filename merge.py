@@ -105,6 +105,11 @@ def parse(path, lat, lag, scalars, meta):
                 scalars[key] = scalars.get(key, 0) + int(val)
             elif key in ("rate", "duration", "per_room"):
                 scalars.setdefault(key, val)
+            elif key in ("server_cpu_pct", "server_kern_pct"):
+                # Every node watched the SAME server over roughly the same
+                # window, so these are repeated measurements of one quantity,
+                # not addends. Summing them would report N x the truth.
+                scalars.setdefault(key, []).append(float(val))
             elif key == "node":
                 scalars.setdefault("nodes", []).append(val)
         i += 1
@@ -157,18 +162,37 @@ def main():
     show("delivery latency", lat)
     show("client self-lag", lag)
 
+    # Server CPU, if any node was given --server-pid. Nodes independently
+    # sampled one server, so they should agree; a wide spread means their
+    # traffic windows did not overlap and the mean describes no single run.
+    cpus = scalars.get("server_cpu_pct", [])
+    if cpus:
+        cpu = sum(cpus) / len(cpus)
+        kern = scalars.get("server_kern_pct", [0.0])
+        kern = sum(kern) / len(kern)
+        spread = max(cpus) - min(cpus)
+        print(f"[srv ] server CPU {cpu:.0f}% of one core "
+              f"(user {100 - kern:.0f}% / kernel {kern:.0f}%), "
+              f"mean of {len(cpus)} node samples")
+        if spread > 10:
+            print(f"[srv ] those samples span {spread:.0f} points — the nodes "
+                  f"did not measure the same window, so treat the mean as "
+                  f"indicative only")
+        if cpu < 95:
+            print("[srv ] the server was NOT CPU-bound on one core; if it is "
+                  "single-threaded this fleet is below its ceiling")
+
     # Measured fan-out, recovered the same way loadgen does it. Duplicate node
     # ids are invisible to the ownership stamp -- two processes both claiming
     # node 0 stamp identically -- but they are loud here, because their merged
     # rooms return every message twice.
     sent, frames = scalars.get("sent", 0), scalars.get("frames_in", 0)
     want = float(scalars.get("per_room", 0) or 0)
+    fanout_bad, fanout = False, 0.0
     if sent and want:
         fanout = frames / sent
         print(f"[fleet] measured fan-out {fanout:.2f} (--per-room {want:.0f})")
-        if not (want * 0.95 <= fanout <= want * 1.05):
-            print("[fleet] fan-out is not what was requested — the offered "
-                  "load above is not the load the command line asked for.")
+        fanout_bad = not (want * 0.95 <= fanout <= want * 1.05)
 
     if scalars.get("foreign", 0):
         print("[fleet] foreign-stamped frames were excluded from the histogram; "
@@ -186,12 +210,38 @@ def main():
     lag_floor, lag_ratio = meta["lag_floor_ns"], meta["lag_ratio"]
     lat99, lat_beyond = lat.pct(0.99)
     lag99, lag_beyond = lag.pct(0.99)
+
+    # Fan-out voids the fleet before self-lag is even consulted, for the
+    # reason given in traffic.cpp: once the offered load is not the requested
+    # load, asking whether the fleet kept up with it answers nothing. It was
+    # an advisory line and advisory lines do not stop anyone -- orphaned
+    # loadgen processes drove it to 17.4 against --per-room 10 and the run
+    # reported HIGHER throughput, which reads as success.
+    if fanout_bad:
+        # Above and below mean opposite things; see traffic.cpp.
+        if fanout > want:
+            print(f"[VOID] measured fan-out {fanout:.2f} exceeds --per-room "
+                  f"{want:.0f} — rooms hold more clients than requested, so "
+                  f"the offered load is larger than asked and the throughput "
+                  f"above is inflated. Usual causes: two nodes sharing a "
+                  f"--node id, or orphaned loadgen processes still holding "
+                  f"connections (check: pgrep -x loadgen).")
+        else:
+            print(f"[VOID] measured fan-out {fanout:.2f} is below --per-room "
+                  f"{want:.0f} — deliveries that were sent never arrived, so "
+                  f"the histogram is missing exactly its slowest samples. "
+                  f"Something was overloaded: read fleet self-lag above to "
+                  f"see which side.")
+        return 3
+
     if lat.total == 0:
         print("[VOID] no latency samples")
+        return 3
     elif lag99 * lag_ratio > lat99 and (lag99 >= lag_floor or lag_beyond):
         print(f"[VOID] fleet self-lag p99 ({lag99/1e6:.3f}ms) is not small "
               f"against latency p99 ({lat99/1e6:.3f}ms) — this run measured "
               f"the fleet, not the server. Add processes or machines.")
+        return 3
     elif lag99 * lag_ratio > lat99:
         print(f"[WARN] fleet self-lag p99 ({lag99/1e6:.3f}ms) is a large "
               f"fraction of latency p99 ({lat99/1e6:.3f}ms), but is under "
@@ -204,7 +254,10 @@ def main():
     if lat_beyond:
         print("       latency p99 is past the 1s histogram range; the printed "
               "value is a floor, not a measurement")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    # Exit 3 == VOID, so fleet.py and any wrapping script can gate on the
+    # verdict without scraping stdout. 0 covers [ OK ] and [WARN] alike.
+    sys.exit(main())

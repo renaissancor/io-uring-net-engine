@@ -29,6 +29,13 @@ struct config {
     bool        use_corpus  = false;  // realistic chat text instead of filler
     uint32_t    corpus_seed = 1;      // fixed so runs and nodes are identical
     std::string dump;              // path to write the raw histograms to
+    // PID of the server under test. When set, the traffic phase samples
+    // /proc/<pid>/stat across exactly the measuring window and reports how
+    // much of one core the server burned. Nothing else in this instrument
+    // observes the server at all, so without it "the client was not the
+    // bottleneck" is the strongest claim a run can make -- which is not the
+    // same as "the server was".
+    int         server_pid = 0;    // 0 = do not sample
 };
 
 // Fixed strings per size class, not per-message RNG: generating randomness in

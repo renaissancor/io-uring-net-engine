@@ -45,7 +45,7 @@ a run that dies in one tells you nothing about the other.
 | unit | owns | fails on |
 |---|---|---|
 | `src/connect.h/.cpp` | establish N connections, shard into rooms | ephemeral port exhaustion (`EADDRNOTAVAIL` at 28,232 per source IP), `RLIMIT_NOFILE`, listen backlog, and O(N²) join notices if rooms are too large |
-| `src/traffic.h/.cpp` | open-loop send schedule, latency + self-lag sampling, the verdict, the dump | coordinated omission in **both** directions, and the verdict thresholds. The largest file and the one to read most carefully. |
+| `src/traffic.h/.cpp` | open-loop send schedule, latency + self-lag sampling, the verdict, the dump, and the only server-side observation (`--server-pid`) | coordinated omission in **both** directions, and the verdict thresholds. The largest file and the one to read most carefully. A green self-lag verdict means the client was not the bottleneck; it has never meant the *server* was, which is what `--server-pid` is for. |
 
 ### Tier 3 — driver
 
@@ -77,10 +77,15 @@ lines; moving it to a doc file guarantees it goes stale, because nobody edits
 the doc when they edit the code.
 
 `design/` is for the opposite case: findings whose value survives the code
-being deleted. Today's entry —
+being deleted.
 [`2026-08-17-three-instrument-defects.md`](../design/2026-08-17-three-instrument-defects.md)
-— is the worked example. The baseline table in the README will be rewritten the
+is the worked example. The baseline table in the README will be rewritten the
 day the io_uring server lands; the three traps in that file will still be true.
+[`2026-08-30-what-limits-the-server.md`](../design/2026-08-30-what-limits-the-server.md)
+is the second: latency is the event loop's sweep period rather than a
+backlog, server CPU% is not a saturation signal, capacity is a delivery-rate
+ceiling independent of connection count, and the attractive explanations that
+turned out wrong are recorded dead so nobody re-tests them.
 
 ## If you change one thing, change it here too
 
@@ -93,9 +98,19 @@ day the io_uring server lands; the three traps in that file will still be true.
   verdict expression, and one asymmetry is deliberate: `merge.py`'s
   `or lag_beyond` term compensates for its `pct()` returning a floor for
   beyond-range percentiles where the C++ `pct()` returns the range limit.
+- **Verdict exit codes** (`traffic.cpp`, `merge.py`, `fleet.py`) — `[VOID]`
+  leaves through exit status 3 as well as stdout, because a verdict nothing can
+  act on without scraping prose is not a gate. `[ OK ]` and `[WARN]` are both 0:
+  WARN is a usable run with no headroom, not a failed one. `fleet.py` treats a
+  node's 3 as informational, since the fleet verdict `merge.py` recomputes from
+  merged buckets is the authoritative one.
 - **Dump format** (`histogram.cpp`, `traffic.cpp`) — `merge.py` parses it, and
   refuses a dump whose first line is not the `netbench-dump v1` header. Bump
   the version when the format changes so a stale dump fails loudly instead of
-  misparsing.
+  misparsing. Adding a *key* is not such a change and deliberately did not bump
+  it: the body is key/value lines, `merge.py` ignores keys it does not know, so
+  an old reader drops `server_cpu_pct` rather than misreading a neighbour and a
+  new reader simply finds it absent. The version guards structural change,
+  where a stale reader produces a wrong number.
 - **Room/nick naming** (`connect.cpp`) — the node namespacing is what keeps
   fleet rooms disjoint; changing the scheme breaks that silently, not loudly.

@@ -6,12 +6,60 @@
 #include "wire.h"
 
 #include <sys/epoll.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+
+// ------------------------------------------------------- server CPU sampling
+//
+// The only part of this program that looks at the server. Reads utime+stime
+// from /proc/<pid>/stat so the traffic phase can say whether the server was
+// actually at its limit -- a question self-lag structurally cannot answer,
+// because self-lag describes this process.
+//
+// The comm field is attacker-shaped: it is parenthesised and may itself
+// contain spaces and ')' ("(my server)"). Everything before the LAST ')' is
+// therefore unparseable by field index, which is why this scans for it rather
+// than splitting on whitespace. After that ')' the fields are state(3)..., so
+// utime(14) is the 12th token and stime(15) the 13th.
+static bool read_proc_cpu(int pid, uint64_t& utime, uint64_t& stime)
+{
+    char path[64];
+    std::snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    std::FILE* f = std::fopen(path, "r");
+    if (!f) return false;
+
+    char buf[4096];
+    const size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+    std::fclose(f);
+    if (n == 0) return false;
+    buf[n] = '\0';
+
+    const char* close = std::strrchr(buf, ')');
+    if (!close) return false;
+
+    const char* p = close + 1;
+    unsigned long long vals[13] = {0};
+    int got = 0;
+    while (got < 13 && *p) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+        char* endp = nullptr;
+        // state(3) is a letter, not a number; strtoull yields 0 for it, which
+        // is fine -- only slots 12 and 13 are read.
+        vals[got++] = std::strtoull(p, &endp, 10);
+        p = (endp == p) ? p + 1 : endp;
+    }
+    if (got < 13) return false;
+    utime = vals[11];   // 12th token after ')'
+    stime = vals[12];   // 13th
+    return true;
+}
 
 // Consumes complete frames from c.in and records a latency sample for every
 // broadcast-chat frame that carries one of our blobs.
@@ -104,6 +152,15 @@ bool dump_stats(const config& cfg, const traffic_stats& st)
                  static_cast<unsigned long long>(st.foreign),
                  static_cast<unsigned long long>(st.backpressed),
                  st.lost_conns);
+    // Additive, and deliberately not a v2. The version guards STRUCTURAL
+    // change, where a stale reader misparses; this body is key/value lines
+    // and merge.py ignores keys it does not know, so an old merge.py reading
+    // a new dump drops this field rather than misreading another one, and a
+    // new merge.py reading an old dump simply finds it absent. Neither
+    // direction can produce a wrong number, which is the thing v1 protects.
+    if (st.server_cpu_pct >= 0.0)
+        std::fprintf(f, "server_cpu_pct %.2f\nserver_kern_pct %.2f\n",
+                     st.server_cpu_pct, st.server_kern_pct);
     dump_histogram(f, "latency",  st.latency);
     dump_histogram(f, "self_lag", st.self_lag);
     return std::fclose(f) == 0;
@@ -156,6 +213,16 @@ void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
     const int64_t slot  = static_cast<int64_t>(1e9 / (static_cast<double>(n) * cfg.rate));
     const int64_t start = now_ns();
     const int64_t end   = start + static_cast<int64_t>(cfg.duration) * 1000000000LL;
+
+    // Server CPU is bracketed over the offered-load window ONLY, never over
+    // the drain below: the drain is a second of deliberate near-idle, and
+    // folding it in would understate the server by duration/(duration+1).
+    uint64_t su0 = 0, ss0 = 0;
+    const bool sample_server = cfg.server_pid > 0 &&
+                               read_proc_cpu(cfg.server_pid, su0, ss0);
+    if (cfg.server_pid > 0 && !sample_server)
+        std::fprintf(stderr, "[warn] --server-pid %d is not readable; server "
+                             "CPU will not be reported\n", cfg.server_pid);
 
     // A single tick that falls far behind must not spin forever trying to
     // catch up while never servicing reads. Cap the burst; the resulting
@@ -298,6 +365,23 @@ void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
         }
     }
 
+    // ---- server CPU over the offered-load window -----------------------
+    if (sample_server) {
+        uint64_t su1 = 0, ss1 = 0;
+        const int64_t cpu_end = now_ns();
+        if (read_proc_cpu(cfg.server_pid, su1, ss1)) {
+            const double ticks = static_cast<double>((su1 - su0) + (ss1 - ss0));
+            const double wall  = static_cast<double>(cpu_end - start) / 1e9;
+            const double hz    = static_cast<double>(::sysconf(_SC_CLK_TCK));
+            if (wall > 0 && hz > 0) {
+                st.server_cpu_pct  = 100.0 * (ticks / hz) / wall;
+                st.server_kern_pct = ticks > 0
+                    ? 100.0 * static_cast<double>(ss1 - ss0) / ticks
+                    : 0.0;
+            }
+        }
+    }
+
     // ---- drain tail ---------------------------------------------------
     //
     // Messages in flight when the clock ran out are still real deliveries.
@@ -333,9 +417,9 @@ void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
 // The end-of-run report. Kept beside run_traffic rather than in main because
 // every number it prints is a field of traffic_stats, and the verdict rules are
 // part of what the traffic phase means, not part of process startup.
-void report(const config& cfg, const traffic_stats& st)
+bool report(const config& cfg, const traffic_stats& st)
 {
-    if (cfg.rate <= 0 || cfg.duration <= 0) return;
+    if (cfg.rate <= 0 || cfg.duration <= 0) return true;
 
     std::printf("\n[stat] node=%u sent=%llu frames_in=%llu bytes_in=%llu "
                 "unparsed=%llu foreign=%llu backpressed=%llu lost_conns=%d\n",
@@ -350,6 +434,27 @@ void report(const config& cfg, const traffic_stats& st)
     print_histogram("delivery latency", st.latency);
     print_histogram("client self-lag",  st.self_lag);
 
+    // The server side, when --server-pid was given. Everything else printed
+    // here describes this process; a run can be perfectly clean by every
+    // client-side measure and still be nowhere near the server's ceiling.
+    // Stated as a share of ONE core because that is what was sampled -- for a
+    // threaded server saturation is some multiple of it.
+    //
+    // Deliberately makes no claim when the reading is HIGH. 100% of a core is
+    // not saturation for this server (it held 100% across a 3.3x throughput
+    // range while batching amortised syscalls), so the only sound inference
+    // is the negative one below.
+    if (st.server_cpu_pct >= 0.0) {
+        std::printf("[srv ] server CPU %.0f%% of one core "
+                    "(user %.0f%% / kernel %.0f%%) over the traffic window\n",
+                    st.server_cpu_pct,
+                    100.0 - st.server_kern_pct, st.server_kern_pct);
+        if (st.server_cpu_pct < 95.0)
+            std::printf("[srv ] the server was NOT CPU-bound on one core; if "
+                        "it is single-threaded this run is below its ceiling "
+                        "and the latency above is a below-knee number\n");
+    }
+
     // Two independent fleet checks, because they catch different mistakes
     // and neither one subsumes the other.
     //
@@ -361,18 +466,15 @@ void report(const config& cfg, const traffic_stats& st)
     // This catches the duplicate-node case that the ownership stamp cannot,
     // since two processes claiming node 0 are indistinguishable by
     // construction.
+    bool   fanout_bad = false;
+    double fanout     = 0.0;
     if (st.sent) {
-        const double fanout = static_cast<double>(st.frames_in) /
-                              static_cast<double>(st.sent);
-        const double want   = static_cast<double>(cfg.per_room);
+        fanout = static_cast<double>(st.frames_in) /
+                 static_cast<double>(st.sent);
+        const double want = static_cast<double>(cfg.per_room);
         std::printf("[fleet] measured fan-out %.2f (--per-room %d)\n",
                     fanout, cfg.per_room);
-        if (fanout > want * 1.05 || fanout < want * 0.95)
-            std::printf("[fleet] fan-out is not what was requested — rooms "
-                        "hold more or fewer clients than --per-room. Two "
-                        "processes sharing a --node is the usual cause; "
-                        "the offered load is then not the one you asked "
-                        "for.\n");
+        fanout_bad = fanout > want * 1.05 || fanout < want * 0.95;
     }
 
     // The ownership stamp catches the other direction: distinct node ids
@@ -409,8 +511,49 @@ void report(const config& cfg, const traffic_stats& st)
     bool a = false, b = false;
     const int64_t lat99 = st.latency.pct(0.99, a);
     const int64_t lag99 = st.self_lag.pct(0.99, b);
+
+    // Fan-out is checked BEFORE self-lag, and it voids the run outright.
+    //
+    // It used to be an advisory line, and an advisory line is not a gate:
+    // orphaned loadgen processes left over from a killed run stayed in the
+    // rooms, drove measured fan-out to 17.4 against --per-room 10, and the
+    // run reported HIGHER throughput as a result. Contamination that reads
+    // as a better result is the kind a human confirms rather than questions,
+    // so it has to fail loudly or it does not fail at all.
+    //
+    // It comes first because it is the more fundamental failure: self-lag
+    // asks whether this process kept up with the load it offered, which is
+    // not a meaningful question once the offered load is not the one the
+    // command line asked for.
+    // High and low mean opposite things and need opposite advice. ABOVE
+    // --per-room, rooms hold more clients than asked: contamination, and it
+    // shows up as HIGHER throughput, which is the kind of wrong number a
+    // human confirms rather than questions. BELOW, the messages were sent but
+    // the deliveries never came back inside the run: overload somewhere, and
+    // self-lag says which side.
+    if (fanout_bad) {
+        if (fanout > cfg.per_room)
+            std::printf("[VOID] measured fan-out %.2f exceeds --per-room %d — "
+                        "rooms hold more clients than requested, so the "
+                        "offered load is larger than the command line asked "
+                        "for and the throughput above is inflated. Usual "
+                        "causes: two processes sharing a --node, or orphaned "
+                        "loadgen processes still holding connections "
+                        "(check: pgrep -x loadgen).\n",
+                        fanout, cfg.per_room);
+        else
+            std::printf("[VOID] measured fan-out %.2f is below --per-room %d — "
+                        "deliveries that were sent never arrived, so the "
+                        "histogram is missing exactly its slowest samples. "
+                        "Something was overloaded: read self-lag above to see "
+                        "which side, and lower --rate or --conns.\n",
+                        fanout, cfg.per_room);
+        return false;
+    }
+
     if (st.latency.total == 0) {
         std::printf("[VOID] no latency samples\n");
+        return false;
     } else if (lag99 * k_lag_ratio > lat99 && lag99 >= k_lag_floor_ns) {
         std::printf("[VOID] self-lag p99 (%.3fms) is not small against "
                     "latency p99 (%.3fms) — this run measured the client, "
@@ -418,6 +561,7 @@ void report(const config& cfg, const traffic_stats& st)
                     "processes and machines.\n",
                     static_cast<double>(lag99) / 1e6,
                     static_cast<double>(lat99) / 1e6);
+        return false;
     } else if (lag99 * k_lag_ratio > lat99) {
         std::printf("[WARN] self-lag p99 (%.3fms) is a large fraction of "
                     "latency p99 (%.3fms), but is under 1ms in absolute "
@@ -432,4 +576,5 @@ void report(const config& cfg, const traffic_stats& st)
                     static_cast<double>(lag99) / 1e6,
                     static_cast<double>(lat99) / 1e6);
     }
+    return true;
 }

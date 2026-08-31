@@ -35,6 +35,21 @@ struct traffic_stats {
     uint64_t  foreign     = 0;   // chat frames stamped by another loadgen node
     uint64_t  backpressed = 0;   // sends skipped because pending was already full
     int       lost_conns  = 0;
+
+    // Server CPU over the traffic window, from --server-pid. Negative means
+    // not sampled. The only field describing the machine under test rather
+    // than this process: a run where the client is idle proves the client was
+    // not the limit and says nothing about whether the server was.
+    //
+    // 100% IS NOT SATURATION. This server held 100% of one core from 3M to
+    // 10M deliveries/s, because a longer sweep batches more messages into
+    // each syscall and cost per message falls as load rises. The high reading
+    // carries almost no information; the LOW reading is the useful one, since
+    // under ~95% the run is definitively below the ceiling. For the signal
+    // that does work -- achieved-vs-offered paired with self-lag -- and the
+    // cost model, see design/2026-08-30-what-limits-the-server.md.
+    double    server_cpu_pct  = -1.0;  // % of ONE core, summed user+kernel
+    double    server_kern_pct = -1.0;  // kernel share of that, 0..100
 };
 
 void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
@@ -43,4 +58,7 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
 bool dump_stats(const config& cfg, const traffic_stats& st);
 void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
                  const config& cfg, traffic_stats& st);
-void report(const config& cfg, const traffic_stats& st);
+// Returns false when the run is VOID -- the numbers describe something other
+// than the server and must not be quoted. main() turns that into exit code 3
+// so a script can gate on it; a printed verdict nobody reads is not a gate.
+bool report(const config& cfg, const traffic_stats& st);

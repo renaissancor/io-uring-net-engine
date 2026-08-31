@@ -86,11 +86,16 @@ int main(int argc, char** argv)
 
     traffic_stats st;
     run_traffic(ep, conns, live, cfg, st);
-    report(cfg, st);
+    // Exit 3 means the verdict was VOID: the run produced numbers, and they
+    // do not describe the server. A printed verdict is only a gate if
+    // something can act on it without reading prose, so it leaves through
+    // the exit status too. 0 covers both [ OK ] and [WARN] -- WARN is a
+    // usable run with no headroom, not a failed one.
+    const bool usable = report(cfg, st);
 
     for (size_t fd = 0; fd < conns.size(); ++fd)
         if (conns[fd].state != conn_state::none)
             ::close(static_cast<int>(fd));
     ::close(ep);
-    return 0;
+    return usable ? 0 : 3;
 }

@@ -105,14 +105,25 @@ def main():
         procs.append((subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT),
                       log))
 
-    failed = False
+    # loadgen exits 3 when its own verdict was VOID. That is a statement
+    # about one node, and the verdict that decides is the fleet one, which
+    # merge.py recomputes from the merged buckets below -- a single node can
+    # legitimately void itself while the fleet is fine. So a 3 is surfaced
+    # and not counted as a failure; anything else non-zero is a crash.
+    failed, voided = False, []
     for node, (p, log) in enumerate(procs):
         rc = p.wait()
         log.close()
-        if rc != 0:
+        if rc == 3:
+            voided.append(str(node))
+        elif rc != 0:
             failed = True
             print(f"[fleet] node {node} exited {rc}; its log is "
                   f"{os.path.join(dump_dir, f'node{node}.log')}")
+    if voided:
+        print(f"[fleet] node(s) {','.join(voided)} voided their own verdict; "
+              f"the fleet verdict below is recomputed from merged buckets "
+              f"and is the one that counts")
 
     missing = [d for d in dumps if not os.path.exists(d)]
     if missing:
