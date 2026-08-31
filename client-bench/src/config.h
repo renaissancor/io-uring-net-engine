@@ -1,0 +1,52 @@
+// config.h — command line surface. One struct, one parser, no globals.
+//
+// Every knob lives here so that adding one does not mean touching a phase.
+// The one field worth reading the comment on is src_ip_base: it is explicit
+// rather than derived from --node because deriving it is correct on one box
+// and silently wrong across boxes, which is the case fleet mode exists for.
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+// ------------------------------------------------------------------ config
+
+struct config {
+    std::string host      = "127.0.0.1";
+    uint16_t    port      = 9000;
+    int         conns     = 10000;
+    int         per_room  = 10;
+    int         src_ips   = 1;
+    int         src_ip_base = 1;   // first 127.0.0.x this process may bind
+    int         inflight  = 256;
+    int         rcvbuf    = 8192;
+    int         sndbuf    = 8192;
+    double      rate      = 1.0;   // messages/sec per connection; 0 = no traffic
+    int         duration  = 10;    // seconds of traffic
+    int         size      = 64;    // filler bytes per message
+    bool        size_mix  = false; // rotate through the size classes instead
+    uint32_t    node      = 0;     // this process's identity in a fleet
+    bool        use_corpus  = false;  // realistic chat text instead of filler
+    uint32_t    corpus_seed = 1;      // fixed so runs and nodes are identical
+    std::string dump;              // path to write the raw histograms to
+    // PID of the server under test. When set, the traffic phase samples
+    // /proc/<pid>/stat across exactly the measuring window and reports how
+    // much of one core the server burned. Nothing else in this instrument
+    // observes the server at all, so without it "the client was not the
+    // bottleneck" is the strongest claim a run can make -- which is not the
+    // same as "the server was".
+    int         server_pid = 0;    // 0 = do not sample
+};
+
+// Fixed strings per size class, not per-message RNG: generating randomness in
+// the hot loop burns client CPU and that cost lands in the measurement.
+// Content is irrelevant — TCP does not compress — but length class is not,
+// since small frames are syscall-bound and frames over the MSS take the
+
+// Payload size classes for --size-mix. Small frames are syscall-bound and
+// frames over the MSS take the segmentation path, so a single size exercises
+// exactly one of them.
+extern const int k_size_classes[4];
+
+void usage();
+bool parse_args(int argc, char** argv, config& cfg);
