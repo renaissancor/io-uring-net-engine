@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Root CI for the monorepo. The engine's own floor job
+# (engine-uring/.github/workflows/floor.yml) became inert when the repo
+# was merged — GitHub only reads workflows at the repository root — so
+# the floor job lives here now, alongside the boundary job that proves
+# server-uring consumes the engine strictly through an install prefix.
+
+jobs:
+  # Lower-bound gate: Ubuntu 22.04 + g++-12, every dep below floor via
+  # FetchContent. See engine-uring/doc/07-ci-and-reproducibility.md.
+  engine-floor:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: engine-uring
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo bash scripts/setup.sh
+      - name: Configure (g++-12 floor preset)
+        run: cmake --preset floor
+      - name: Build
+        run: cmake --build --preset floor
+      - name: Test
+        run: ctest --preset floor
+      - name: Emit version snapshot
+        run: BUILD_DIR=build/floor bash scripts/emit-snapshot.sh build/floor/version-snapshot.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: version-snapshot-floor
+          path: engine-uring/build/floor/version-snapshot.txt
+          retention-days: 90
+
+  # Boundary gate: build + test the engine, install it to a prefix, then
+  # build + test server-uring against that prefix ONLY. A header missing
+  # from the engine's public FILE_SET fails here, not on a user's machine.
+  engine-and-server:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo bash engine-uring/scripts/setup.sh
+      - name: Configure engine (Release)
+        run: cmake -S engine-uring -B build/engine -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build engine
+        run: cmake --build build/engine
+      - name: Test engine
+        run: ctest --test-dir build/engine --output-on-failure
+      - name: Install engine to prefix
+        run: cmake --install build/engine --prefix "$PWD/prefix"
+      - name: Configure server-uring against the prefix
+        run: cmake -S server-uring -B build/server -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PWD/prefix"
+      - name: Build server-uring
+        run: cmake --build build/server
+      - name: Test server-uring
+        run: ctest --test-dir build/server --output-on-failure
+
+  # The control group and the instrument build with plain make.
+  epoll-and-bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server-epoll
+        run: make -C server-epoll
+      - name: Build client-bench
+        run: make -C client-bench
