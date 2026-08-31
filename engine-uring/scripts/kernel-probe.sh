@@ -86,7 +86,7 @@ EOF
   rm -f "$src" "$bin"
 }
 
-echo "=== iouring-net-lib kernel + runtime probe ==="
+echo "=== engine-uring kernel + runtime probe ==="
 kernel=$(uname -r)
 echo "kernel:                $kernel"
 

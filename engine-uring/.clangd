@@ -1,4 +1,4 @@
-# clangd configuration for iouring-net-lib.
+# clangd configuration for engine-uring.
 # https://clangd.llvm.org/config
 
 CompileFlags:

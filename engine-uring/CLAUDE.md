@@ -1,4 +1,4 @@
-# CLAUDE.md — iouring-net-lib
+# CLAUDE.md — engine-uring
 
 Operating notes for Claude. The README is for the human; this is the fast path
 for *me*. Keep it short — point to docs for depth, record only what isn't

@@ -1,14 +1,14 @@
 # Server Architecture Discussion — 2026-05-19
 
 Discussion record between Stephen Park and Claude (Opus 4.7) on the architectural
-foundations of `iouring-net-lib`. Captures decisions reached, the reasoning behind
+foundations of `engine-uring`. Captures decisions reached, the reasoning behind
 them, and open questions still on the table.
 
 ---
 
 ## TL;DR
 
-The architecture of `iouring-net-lib` rests on seven load-bearing decisions:
+The architecture of `engine-uring` rests on seven load-bearing decisions:
 
 1. **No multithreading in the content layer.** Real-time service requires single-threaded content execution. This is a hard constraint, not a v1 simplification.
 2. **Channel = one content thread.** Each interaction zone (chat room, game match, MMO zone) runs on exactly one user-space thread, with its own io_uring instance and its own session ring buffers.
@@ -469,7 +469,7 @@ This is **not** multi-threading the architecture. The architecture stays single-
 
 ### When this is worth doing
 
-Only when profiling shows compute-heavy sub-steps (pathfinding, AI) dominating the serial budget. For v1 of `iouring-net-lib` and the squad-commander game (~140 entities per zone), this is unnecessary — single-threaded tick handles the load comfortably.
+Only when profiling shows compute-heavy sub-steps (pathfinding, AI) dominating the serial budget. For v1 of `engine-uring` and the squad-commander game (~140 entities per zone), this is unnecessary — single-threaded tick handles the load comfortably.
 
 ### For the portfolio writeup
 

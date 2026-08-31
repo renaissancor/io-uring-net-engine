@@ -1,11 +1,35 @@
 # 09 — Library / Product split
 
+> **Status: superseded, kept for the reasoning.** This document argued for
+> shipping the library and the product as two separate git repositories. That
+> split was rejected; everything now lives in this monorepo. **Names in the
+> body below are the repository names of the time** — `iouring-net-lib` is
+> today's `engine-uring/`, `iouring-net-server` is today's `server-uring/`
+> (reserved, not yet written). They are left unrenamed on purpose: rewriting
+> them would make a rejected plan read as a description of the current layout.
+>
+> **What survives is the boundary, not the repo count.** The four arguments
+> below are really about CMake, not git, and three of them hold unchanged
+> inside one repo: the product reaches the library only through
+> `find_package(iouring_net)` against an install prefix, never through a
+> relative include; library and product keep separate CI and sanitizer lanes;
+> and the install/export round trip stays a required test. The fourth argument
+> — that separate repos make the portfolio narrative clearer — reversed once
+> the instrument and the epoll baseline joined the picture: the comparison is
+> the artifact, and it only reads as one thing in one clone.
+>
+> Two facts made the split untenable in practice. The baseline numbers had to
+> be exiled into the load generator's repo to survive `epoll-chat-study` being
+> disposable, and this very document linked to its sibling with `../../` paths
+> that only resolved if both repos happened to be checked out side by side
+> under the exact expected names.
+
 This document defines the two-project architecture that the portfolio
 ships as: `iouring-net-lib` (this repo, the **library**) and
 `iouring-net-server` (a sibling repo, the **product**, to be created).
 It specifies the boundary, the seam that connects them, what belongs on
 each side, and the dependency direction. Together with
-[`00-overview.md`](00-overview.md) it is the architectural source of
+[`00-overview.md`](../engine-uring/doc/00-overview.md) it is the architectural source of
 truth.
 
 The split mirrors the Windows reference repos:
@@ -315,15 +339,15 @@ than the second repo being a live build target.
 
 ## Cross-references
 
-- [`00-overview.md`](00-overview.md) — layered subsystem map and which
+- [`00-overview.md`](../engine-uring/doc/00-overview.md) — layered subsystem map and which
   layer each component sits in.
-- [`02-build-and-toolchain.md`](02-build-and-toolchain.md) — toolchain
+- [`02-build-and-toolchain.md`](../engine-uring/doc/02-build-and-toolchain.md) — toolchain
   floor that both repos must agree on.
-- [`05-cmake.md`](05-cmake.md) — library-side CMake conventions; the
+- [`05-cmake.md`](../engine-uring/doc/05-cmake.md) — library-side CMake conventions; the
   product follows the same conventions for warnings, presets, and
   sanitizer matrices.
-- [`07-ci-and-reproducibility.md`](07-ci-and-reproducibility.md) —
+- [`07-ci-and-reproducibility.md`](../engine-uring/doc/07-ci-and-reproducibility.md) —
   reproducibility envelope; the product pins to a library tag that was
   built inside the envelope.
-- [`08-test-strategy.md`](08-test-strategy.md) — library-side test
+- [`08-test-strategy.md`](../engine-uring/doc/08-test-strategy.md) — library-side test
   pyramid. The product owns integration / E2E above that.

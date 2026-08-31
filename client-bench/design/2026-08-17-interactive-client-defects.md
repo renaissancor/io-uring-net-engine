@@ -124,7 +124,7 @@ characters.
 ## Rationale links
 
 - `chatcli.py` — `encode_line()`, `chat_budget()`, `mode_interactive`.
-- `../epoll-chat-study/README.md` lesson 4 — the same hazard, on the server.
+- `../server-epoll/README.md` lesson 4 — the same hazard, on the server.
 - [`2026-08-17-three-instrument-defects.md`](2026-08-17-three-instrument-defects.md)
   — the other three found the same day, all by disagreement rather than by
   inspection. These three were found by use.

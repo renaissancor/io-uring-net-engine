@@ -1,7 +1,7 @@
-# netbench
+# client-bench
 
-Client-side tools for the chat/game servers in `epoll-chat-study`,
-`iouring-net-lib`, and `iouring-net-server`. Two of them, and the split
+Client-side tools for the chat/game servers in `server-epoll`,
+`engine-uring`, and `server-uring`. Two of them, and the split
 between them is the point:
 
 | | | |
@@ -20,21 +20,25 @@ same question.
 Neither has any performance requirement in the judging role, which is why one
 is C++ and the other is Python.
 
-## Why this is its own repo
+## Why this is its own component
 
-These are **tools, not products**, and they have to survive the things they
-point at.
+These are **tools, not products**. They share the repository with the servers
+they point at, but not the directory, and the boundary is load-bearing:
 
-- `epoll-chat-study` is explicitly throwaway. Anything durable that lives
-  there dies with it — including the baseline numbers below, which exist
-  precisely to be compared against later.
-- `iouring-net-lib` bans the STL (`std::function`, exceptions, streams,
-  `std::` sync types; `sds::` containers instead). A load generator has no
-  reason to obey that, and obeying it would mean a rewrite for nothing.
-- A tool that lives inside one of the two things it compares makes the
-  comparison harder to justify than it should be.
+- A tool that lives *inside* one of the two things it compares makes the
+  comparison harder to justify than it should be. Sitting beside both, and
+  switching between them with `--proto`, is what lets one instrument produce
+  numbers that are comparable at all.
+- `engine-uring` bans the STL (`std::function`, exceptions, streams, `std::`
+  sync types; `sds::` containers instead). A load generator has no reason to
+  obey that, and obeying it would mean a rewrite for nothing. Here the STL
+  stays.
+- Nothing here has a performance requirement in its *judging* role, which is
+  why one half is C++ and the other is Python.
 
-So they live outside both, keep the STL, and switch protocols with a flag.
+The measured numbers do not live here either — they are in
+[`../paper-result/`](../paper-result/), so that changing the tool cannot
+quietly restate its own results.
 
 ## Layout
 
@@ -116,7 +120,7 @@ batches more messages into each syscall. Under ~95% the run is definitively
 below the ceiling; at 100% you have learned almost nothing. The signal that
 works is a pair: achieved < offered with self-lag **small** means the server is
 the limit, with self-lag **large** means the client is. See
-[`design/2026-08-30-what-limits-the-server.md`](design/2026-08-30-what-limits-the-server.md).
+[`paper-result/2026-08-30-what-limits-the-server.md`](../paper-result/2026-08-30-what-limits-the-server.md).
 
 ### Payload: fixed length or real chat
 
@@ -220,7 +224,7 @@ Both targets use the same 4-byte little-endian header, no byte swapping. They
 differ in exactly one respect:
 
 ```
-epoll-chat-study   [uint16 len ][uint16 type]   len  = payload bytes
+server-epoll   [uint16 len ][uint16 type]   len  = payload bytes
 iouring-net-*      [uint16 size][uint16 id  ]   size = payload + header
 ```
 
@@ -331,129 +335,12 @@ Three settings that had to be right before any of this worked:
   N clients in one room is O(N²) frames; 40k in a single room is 800M notices
   and the connect phase never finishes.
 
-## Baseline: single-threaded epoll server
+## The numbers this produced
 
-`epoll-chat-study`, 10k connections, rooms of 10, loopback, same machine.
-Delivered messages per second is `conns × rate × per-room`. The server is
-single-threaded, so one core is the ceiling.
+The single-threaded epoll baseline, its two flush modes, the fleet-vs-single
+process divergence, and the user/kernel split all live in
+[`../paper-result/`](../paper-result/) — results are kept apart from the tool
+that produced them so that changing the tool cannot quietly restate them.
 
-**There are two baselines, and the difference between them is larger than
-anything io_uring is expected to deliver.** The study server takes
-`CHAT_FLUSH=immediate|batch`:
-
-- `immediate` — a broadcast calls `send()` once per recipient, inline, while
-  walking the room. One syscall per delivery. The naive shape.
-- `batch` — the room walk only appends to each recipient's buffer, and one
-  flush pass at the end of the epoll batch sends what accumulated. Several
-  messages bound for the same connection collapse into one `send()`.
-
-Publishing only the first would credit io_uring for batching that epoll can do
-perfectly well. A weak control group is not a control group.
-
-Numbers below are the **third** measurement, and the first one taken with a
-fleet rather than a single client process. The single-process ladder recorded
-earlier was wrong above rate 5, for two compounding reasons documented under
-"One process cannot verify itself" — treat any number here that predates the
-fleet as withdrawn.
-
-Method: `python3 fleet.py --nodes 3 --conns 3334 --rate <r> --duration 20`
-against a fresh server per point.
-
-### immediate — one send() per delivery
-
-| rate | delivered/s | server CPU | user/kernel | p50 | p99 | p99.9 |
-|---:|---:|---:|---:|---:|---:|---:|
-| 5 | 500k | 79% | 7 / 92 | 0.022 ms | 0.454 ms | **12.328 ms** |
-| 7 | 700k | **100%** | 7 / 92 | **67.8 ms** | 187.4 ms | 210.4 ms |
-| 14 | 1.4M | 100% | 7 / 92 | **460.1 ms** | >1000 ms | >1000 ms |
-
-### batch — one send() per connection per epoll batch
-
-Three processes, ~10k connections total, so the client is not in the way.
-
-| rate | delivered/s | p50 | p99 | self-lag p99 | one process reported |
-|---:|---:|---:|---:|---:|---:|
-| 5 | 500k | 0.023 ms | 0.237 ms | 0.001 ms | 0.022 ms — agrees |
-| 8 | 800k | 0.056 ms | 0.455 ms | 0.003 ms | 0.025 ms — **2x low** |
-| 14 | 1.4M | 0.073 ms | 0.770 ms | 0.008 ms | 0.035 ms — **2x low** |
-| 20 | 2.0M | 0.102 ms | 1.480 ms | 0.021 ms | 0.056 ms — **2x low** |
-| 30 | 3.0M | 18.533 ms | 38.701 ms | 0.024 ms | 0.136 ms — **136x low** |
-
-**The ceiling is 2M deliveries/s.** Below it the server holds a sub-millisecond
-p50; at 3M it is 18.5 ms and past the knee. The earlier "2M measured, 3M
-observed" reading came from a client that could not see the queue it was
-creating.
-
-### One process cannot verify itself
-
-This is the finding worth keeping, above any particular number.
-
-A saturated load generator does not report that it is saturated. It reports
-plausible server numbers that happen to be wrong, and the self-lag guard —
-built exactly to catch this — did not fire, because it watches sends and the
-damage was on the receive side.
-
-Two separate mechanisms, found by carrying identical load with one process and
-with three and asking why they disagreed:
-
-**Receive-side coordinated omission.** `recv_ts` was stamped once per
-`epoll_wait` batch and shared by every frame read in that batch. The frames at
-the end of a long ready list are the late ones, and dating them from when the
-walk began deletes precisely the delay that saturation caused. More
-connections per process means longer batches means more deleted. At 3M/s the
-batch stamp reported p50 0.109 ms from one process and 18.868 ms from three
-carrying the same connections and the same load — with the server at 100% CPU
-and the same user/kernel split in both, so the server was doing identical work.
-Fixed: stamped per socket.
-
-**The client is inside the system under test.** Even correctly stamped, a
-client that cannot read fast enough closes its receive windows, and TCP
-backpressure then stops the server from building the queue it would build
-against a client that keeps up. Nothing is mis-measured; the server is simply
-not being asked the question you thought you asked. This one has no fix in
-code — it is what `fleet.py`, `--src-ips` and more machines are for.
-
-**So: a single-process number at high rate is unverified, not wrong-by-default
-but unverified.** Confirm it with a fleet run at the same connection count
-before quoting it. The two agreed exactly at rate 5 and diverged by 2x from
-rate 8 onward.
-### Where the time goes
-
-At the fair baseline the server spends **86–93% of its CPU in kernel time**,
-and the number *falls as load rises* — 93% at rate 5, 90% at rate 14, 86% at
-rate 30 — because coalescing removes syscalls while the memcpy work stays.
-Application logic (framing, room lookup, string assembly) is the remaining
-7–14%.
-
-Read the direction, not just the value: the kernel share is highest where the
-server is least busy. Quoting a single figure hides that, which is how the
-first session ended up with "92%" as if it were a constant.
-
-That is the io_uring argument measured rather than assumed: the cost being
-attacked is syscall transitions, and that is where the budget sits. It is also
-the honest ceiling, and the honest ceiling has moved twice — first because 92%
-was measured against a naive baseline, and again because the throughput bar
-rose from 700k to 2M measured / 3M observed.
-
-**Re-run this split first against the io_uring server, and against `batch`,
-never against `immediate`.** If the split does not move, the port did not do
-what it was for.
-
-## Caveats
-
-- Loopback only. No NIC, no driver path, and client and server share the CPU.
-- The histogram tops out at 1 s. Rows showing `>1000 ms` have samples
-  excluded, so past saturation the percentiles stop being comparable between
-  rows.
-- `batch` flushes at the end of an epoll batch — microseconds — not on a
-  fixed-rate tick. A 30 Hz tick would add up to 33 ms and is a different
-  experiment.
-- Steady-state connections, not churn. Repeated connect/disconnect is a
-  different and harder workload this does not touch.
-- Fan-out is rooms of 10 in the tables above. Varying it 10 → 100 → 500 at a
-  fixed 500k deliveries/s moved the user/kernel split only from 7/93 to 4/96,
-  so the split is not an artifact of small rooms. It *is* an artifact of chat:
-  per-recipient work here is a memcpy, where a game server would add AoI
-  filtering and per-recipient serialization. Re-measure when gameplay packets
-  land.
-- `--size-mix` exists but every table above is fixed 64-byte filler.
+What stays here is the *method*: what is measured, what makes a run count, and
+the traps above that had to be right before any number was meaningful.

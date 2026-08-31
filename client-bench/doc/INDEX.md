@@ -1,4 +1,4 @@
-# netbench — code map
+# client-bench — code map
 
 `README.md` is the method: what is measured, why it is measured that way, and
 what the numbers currently are. **This file is the code map**: what each unit
@@ -8,7 +8,7 @@ The two are deliberately separate. The method outlives any particular
 implementation of it — if this were rewritten in Rust tomorrow the README would
 survive and this file would not.
 
-> **Not a build-from-spec tree.** `iouring-net-lib`'s `doc/` is normative: an
+> **Not a build-from-spec tree.** `engine-uring`'s `doc/` is normative: an
 > agent implements each unit from its spec without opening the source, so those
 > files carry exact API blocks and "done when" gates. This is a measuring
 > instrument with no external callers and one build target, so copying that
@@ -81,7 +81,7 @@ being deleted.
 [`2026-08-17-three-instrument-defects.md`](../design/2026-08-17-three-instrument-defects.md)
 is the worked example. The baseline table in the README will be rewritten the
 day the io_uring server lands; the three traps in that file will still be true.
-[`2026-08-30-what-limits-the-server.md`](../design/2026-08-30-what-limits-the-server.md)
+[`2026-08-30-what-limits-the-server.md`](../../paper-result/2026-08-30-what-limits-the-server.md)
 is the second: latency is the event loop's sweep period rather than a
 backlog, server CPU% is not a saturation signal, capacity is a delivery-rate
 ceiling independent of connection count, and the attractive explanations that

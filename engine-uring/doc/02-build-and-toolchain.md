@@ -187,7 +187,7 @@ to demonstrate Linux systems programming, not a build orchestrator.
 ## Repository layout
 
 ```
-iouring-net-lib/
+engine-uring/
 ├── CMakeLists.txt
 ├── cmake/
 │   ├── compiler-warnings.cmake

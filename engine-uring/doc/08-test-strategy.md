@@ -95,7 +95,7 @@ a full logger queue does not block a worker.
 Packet dispatch / handler-table / codec tests are **not** part of
 the library test pyramid in v1 — the dispatcher and codec are
 product-side (see
-[`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md)
+`server-uring/docs/06-test-strategy.md`
 § "Layer 1 — unit"). The library tests stop at `frame_view`; the
 product owns everything above that.
 
@@ -111,7 +111,7 @@ reference's 3-byte `[0x89][u8 size][u8 type]` header to this library's
 claim, not a frame-byte claim — see
 [`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
 § "Purpose" and
-[`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
+`server-uring/docs/04-protocol.md`
 § "Parity with the Windows reference" for why.
 
 **Fixture capture.** From the Windows reference build, run a short
@@ -234,11 +234,11 @@ The library's framing code is designed to be fuzz-friendly:
 `peek_frame(std::span<const std::byte>)` is a pure function over
 bytes — wire a libFuzzer harness against it. (The matching
 deframer-fuzz harness on the product side is in
-[`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md)
+`server-uring/docs/06-test-strategy.md`
 § "Fuzz harness".)
 
 Codec-level fuzzing is **product-side**: the codec lives in
-`iouring-net-server/generated/` and tests against schema invariants
+`server-uring/generated/` and tests against schema invariants
 (field widths, wire offsets) rather than library framing. Don't
 duplicate it here.
 
@@ -256,6 +256,6 @@ duplicate it here.
 3. **Property-based testing.** `rapidcheck` integrates cleanly with
    Catch2. Adopt for framing and ring buffer round-trips.
    (Codec property tests are product-side; see
-   [`iouring-net-server/docs/06-test-strategy.md`](../../iouring-net-server/docs/06-test-strategy.md).)
+   `server-uring/docs/06-test-strategy.md`.)
 4. **Coverage gates.** No coverage gate at v1. Test thoroughness is
    judged by the per-subsystem table above, not by line coverage.

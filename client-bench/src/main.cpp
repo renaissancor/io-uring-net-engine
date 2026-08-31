@@ -7,7 +7,7 @@
 // This is a measuring instrument, not a product, which is why it lives in its
 // own repo rather than inside either server it measures. An instrument that
 // lives inside one of the things it compares inherits that project's
-// constraints — iouring-net-lib bans the STL, which a load generator has no
+// constraints — engine-uring bans the STL, which a load generator has no
 // reason to obey — and makes cross-server comparison harder to justify than
 // it should be.
 //

@@ -20,7 +20,7 @@
 // Both targets use the same 4-byte little-endian header with no byte
 // swapping, and they differ in exactly one respect:
 //
-//   epoll-chat-study   [uint16 len ][uint16 type]   len  = payload bytes
+//   server-epoll   [uint16 len ][uint16 type]   len  = payload bytes
 //   iouring-net-*      [uint16 size][uint16 id  ]   size = payload + header
 //
 // The width is identical; what differs is whether the length field counts the
@@ -40,10 +40,9 @@ struct proto {
     uint16_t id_chat_out         = 101;
 };
 
-// The IDs above are epoll-chat-study's. The iouring-net product assigns its
-// own from a schema (see iouring-net-server/docs/04-protocol.md § packet ID
-// ranges) and that schema does not exist yet, so --proto currently switches
-// framing only. Fill these in from the generated table when there is one
+// The IDs above are server-epoll's. The io_uring product (server-uring) will
+// assign its own from a schema; neither that product nor its schema exists
+// yet, so --proto currently switches framing only. Fill these in from the generated table when there is one
 // rather than guessing: an unrecognised ID closes the session there, so a
 // wrong guess presents as a connection failure and not as a protocol error.
 extern proto g_proto;

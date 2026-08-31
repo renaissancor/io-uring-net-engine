@@ -21,7 +21,7 @@ expected<int, const char*> doubled(int x) {
 }  // namespace
 
 int main() {
-    fmt::println("hello from iouring-net-lib");
+    fmt::println("hello from engine-uring");
 
     if (auto r = doubled(21); r.has_value()) {
         fmt::println("expected<int, const char*>: ok({})", r.value());

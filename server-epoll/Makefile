@@ -6,7 +6,7 @@ SAN      ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 # throughput, so a sanitised binary does not describe this server, it
 # describes the sanitiser -- and nothing in the output says which one you are
 # holding. That trap used to be the default target here: `make` produced the
-# sanitised server and `make release` the fast one, the opposite of netbench's
+# sanitised server and `make release` the fast one, the opposite of client-bench's
 # convention next door, so the obvious command was the wrong one.
 all: server
 

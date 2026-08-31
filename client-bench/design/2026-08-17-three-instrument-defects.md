@@ -43,7 +43,7 @@ doing exactly what it was written to do.
 core: p50 85.9 ms inline, 0.021 ms batched. Later measurement sharpened this
 further — see below, the cost is not throughput at all.
 
-**Lesson recorded as** `epoll-chat-study` lesson 8.
+**Lesson recorded as** `server-epoll` lesson 8.
 
 ---
 
@@ -204,6 +204,6 @@ matters, not a special investigation.
 
 - `README.md` § "One process cannot verify itself" — the operating rule.
 - `README.md` § "What it measures" — the three-level verdict table.
-- `../epoll-chat-study/README.md` lesson 8 — defect 1 from the server's side.
+- `../server-epoll/README.md` lesson 8 — defect 1 from the server's side.
 - Commits `2dfe667` (fleet mode + defect 3), `674cda5` (defect 2),
-  `5f5954d` in `epoll-chat-study` (defect 1).
+  `5f5954d` in `server-epoll` (defect 1).

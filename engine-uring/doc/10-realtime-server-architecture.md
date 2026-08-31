@@ -9,7 +9,7 @@ discussions live under `design/`; decision records live in the
 
 ## 1. Project identity
 
-`iouring-net-lib` is a **Linux-native C++20 realtime interaction network engine
+`engine-uring` is a **Linux-native C++20 realtime interaction network engine
 for MMO/RTS-style servers**, built to keep session I/O, packet parsing, and
 authoritative world-state mutation on the same owner thread so per-interaction
 latency is predictable.

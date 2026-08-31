@@ -54,7 +54,7 @@ class Proto:
         self.name = name
         self.len_includes_header = (name == "iouring")
 
-        # These are epoll-chat-study's IDs. iouring-net-lib assigns its own
+        # These are server-epoll's IDs. engine-uring assigns its own
         # from a schema that does not exist yet (v1 has join / chat / leave
         # with gameplay packets gated behind S_ENTER_WORLD_OK). Fill them in
         # from the generated table rather than guessing — an unrecognised ID
@@ -83,7 +83,7 @@ P = Proto("study")   # replaced in main() by --proto
 # actually send is the cap minus its own nickname — the limit is per-user, and
 # nobody is told what theirs is.
 #
-# Measured against epoll-chat-study with a 6-character nick:
+# Measured against server-epoll with a 6-character nick:
 #
 #   text <= 1016 B   ->  broadcast 1024 B    ->  delivered
 #   text 1017-1024 B ->  broadcast over cap  ->  SILENTLY DROPPED, socket open

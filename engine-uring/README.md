@@ -1,4 +1,4 @@
-# iouring-net-lib
+# engine-uring
 
 A Linux-native C++20 realtime interaction network engine for MMO/RTS-style
 servers, built on `io_uring`. The first demo is room-based chat; the engine

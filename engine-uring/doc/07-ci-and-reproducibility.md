@@ -108,7 +108,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 the same image and env:
 
 ```json
-{ "name": "iouring-net-lib", "build": { "dockerfile": "Dockerfile" },
+{ "name": "engine-uring", "build": { "dockerfile": "Dockerfile" },
   "runArgs": ["--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined"],
   "postCreateCommand": "cmake --preset default" }
 ```

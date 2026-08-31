@@ -73,7 +73,7 @@ upgrade.
 **Report format.** Sorted by size descending, grouped by call site:
 
 ```
-==== iouring-net-lib leak report ====
+==== engine-uring leak report ====
 Live allocations: 14
 Total bytes: 12,288
 

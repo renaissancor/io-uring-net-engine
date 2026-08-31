@@ -1,5 +1,5 @@
 ---
-# Style for iouring-net-lib. Based on LLVM with project tweaks.
+# Style for engine-uring. Based on LLVM with project tweaks.
 # Apply with: clang-format -i path/to/file.cpp
 
 BasedOnStyle: LLVM

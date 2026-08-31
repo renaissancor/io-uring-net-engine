@@ -1,6 +1,6 @@
 # 00 — Overview
 
-This document is the entry point for the `iouring-net-lib` design. It defines
+This document is the entry point for the `engine-uring` design. It defines
 scope, non-goals, the layered subsystem map, design tenets, and a glossary
 that the rest of the docs assume.
 
@@ -59,10 +59,13 @@ Lower layers know nothing about higher layers. The reactor depends on
 primitives and `liburing`; the network layer depends on the reactor and
 primitives; application code depends on the network layer.
 
-The top layer (Application) does not live in this repo. It belongs to
-a sibling product repo (`iouring-net-server`, to be created) that
-consumes this library through `find_package(iouring_net)`. See
-[`09-project-split.md`](09-project-split.md) for the full
+The top layer (Application) does not live in this directory. It belongs
+to `server-uring/`, a sibling directory in this monorepo that is
+reserved and not yet written; it will consume this library through
+`find_package(iouring_net)` against an install prefix, never through a
+relative include. That boundary is the point and survives the two
+projects sharing one repo. See
+[`09-project-split.md`](../../paper-design/09-project-split.md) for the full
 library/product architecture, boundary criteria, and the seam that
 connects the two projects.
 
@@ -95,7 +98,7 @@ connects the two projects.
 | Network     | `listener`                             | Port       | `SelectServer/.../Net.cpp:181` (accept loop)            |
 | Network     | `session`                              | New        | Replaces select-loop `Session` struct (`SelectServer/.../Net.h:39`) |
 | Network     | `packet_framing`                       | Port       | Concept from `SelectServer/.../Network.cpp:377` (magic header) |
-| Network     | `packet_handler`                       | Deferred   | Pulled out of library v1 — the dispatcher is product-side. See `doc/network/packet_handler.md` (status note) and `iouring-net-server/wiki/server/dispatch.md`. |
+| Network     | `packet_handler`                       | Deferred   | Pulled out of library v1 — the dispatcher is product-side. See `doc/network/packet_handler.md` (status note) and `server-uring/wiki/server/dispatch.md`. |
 
 **Status legend:**
 - **Port** — design is OS-agnostic; implementation is a clean transcription with the platform layer swapped.
@@ -166,7 +169,7 @@ This is a design-doc honesty marker, not a problem.
    compat-deframer), and "strip 0x89" alone is **not** sufficient. See
    [`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
    § "Purpose" and the consumer-side detail in
-   [`iouring-net-server/docs/04-protocol.md`](../../iouring-net-server/docs/04-protocol.md)
+   `server-uring/docs/04-protocol.md`
    § "Parity with the Windows reference."
 
 7. **Namespace tiers.** `lnx::` is reserved for raw POSIX/Linux API

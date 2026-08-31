@@ -1,29 +1,38 @@
-# epoll-chat-study
+# server-epoll
 
-Single-threaded, level-triggered epoll chat server. A **throwaway study build**
-whose job is to teach the readiness model and to get the protocol logic right
-somewhere cheap to debug, before it gets ported to io_uring in
-`iouring-net-lib`.
+Single-threaded, level-triggered epoll chat server. It began as a throwaway
+build whose job was to teach the readiness model and get the protocol logic
+right somewhere cheap to debug, before the port to io_uring in `engine-uring`.
+
+**It is no longer throwaway: it is the control group.** Every claim the
+io_uring engine makes is a comparison against the numbers this server
+produces, and a comparison is only worth as much as its baseline. That is a
+permanent job, so this code stays.
 
 Deliberately uses the STL, one file, and no abstractions. None of the
-`iouring-net-lib` rules (no-STL, `sds::` containers, `u08` aliases) apply here.
-**Do not try to make this good.** When the lessons are absorbed, it gets
-deleted.
+`engine-uring` rules (no-STL, `sds::` containers, `u08` aliases) apply here,
+and they should not — a control group written under the engine's constraints
+would be measuring the constraints. **Do not make this fancy.** Change it only
+to fix a defect or to keep it a fair opponent, never to make it faster in a way
+the engine does not also get.
 
 ## Build and run
 
 ```bash
-make                 # ASan + UBSan build (default; keep it this way)
+make                 # the build you MEASURE with (-O2 -DNDEBUG)
 ./server 9000
+
+make asan            # server-asan: correctness only, roughly half the throughput
 ```
 
 ## Test modes
 
-The clients live in [`~/code/netbench`](../netbench) — both of them, for the
-same reason: this repo is marked for deletion and they have to outlive it.
+The clients live in [`client-bench`](../client-bench) — both of them, because
+an instrument that lives inside one of the two things it compares makes the
+comparison harder to justify than it should be.
 
 ```bash
-cd ~/code/netbench
+cd ../client-bench
 python3 chatcli.py interactive --nick alice --room lobby
 python3 chatcli.py verify  --clients 8  --messages 20    # content correctness
 python3 chatcli.py dribble                               # one byte per send
@@ -43,25 +52,25 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
 | `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
-| `loadgen` | see `netbench/README.md` — 2M deliveries/s with `CHAT_FLUSH=batch`, measured with a 3-process fleet |
+| `loadgen` | see `client-bench/README.md` — 2M deliveries/s with `CHAT_FLUSH=batch`, measured with a 3-process fleet |
 
-## Clients live in `netbench`
+## Clients live in `client-bench`
 
 Both the load generator (`src/`, driven by `fleet.py`) and the interactive/verify
-client (`chatcli.py`) were extracted to [`~/code/netbench`](../netbench). They had to
+client (`chatcli.py`) were extracted to [`client-bench`](../client-bench). They had to
 leave: this repo is marked for deletion, and both are needed to evaluate the
 io_uring server that replaces it — the baseline numbers exist precisely to be
 compared against later.
 
 ```bash
-cd ~/code/netbench && make
+cd ../client-bench && make
 CHAT_FLUSH=batch CHAT_MAX_CONNS=60000 CHAT_QUIET=1 ./server 9000     # here
 python3 fleet.py --nodes 3 --conns 3334 --rate 20 --duration 20 --port 9000
 ```
 
 Use `fleet.py`, not a single `./loadgen`, for anything above ~500k
 deliveries/s. One client process reports plausible numbers while saturated —
-see netbench's "One process cannot verify itself".
+see client-bench's "One process cannot verify itself".
 
 Three environment knobs exist for it:
 
@@ -97,7 +106,7 @@ run used a **fleet of client processes**, and it withdrew the single-process
 numbers above 500k/s — one loadgen process was stamping receive times per
 epoll batch and was itself inside the flow-control loop, so it reported 0.136 ms
 where three processes carrying the same load reported 18.533 ms. Full tables,
-method, and the two mechanisms are in `netbench/README.md`.
+method, and the two mechanisms are in `client-bench/README.md`.
 
 ## Protocol
 
@@ -108,11 +117,11 @@ project takes.
 struct { uint16_t len; uint16_t type; }   // len = payload bytes, header excluded
 ```
 
-The real project's header (`iouring-net-server/docs/04-protocol.md`) is also
+The real project's header (`server-uring`'s, once written) is also
 4 bytes, `[uint16 size][uint16 id]`, and differs in exactly one respect:
 **`size` counts the header, `len` does not.** The width is the same; the
 inclusive/exclusive convention is the whole porting seam, and it is what
-`netbench --proto` switches. An earlier note here claimed the real project
+`client-bench --proto` switches. An earlier note here claimed the real project
 used an 8-byte header — the protocol doc is authoritative and says otherwise.
 
 | type | direction | meaning |
@@ -231,4 +240,4 @@ Fix: index loop re-reading `size()` each iteration, so connections doomed
 
 Timeboxed to one week. Done means: accept, framing, rooms, broadcast, clean
 disconnect, and a forced partial-send path. All six are verified above.
-**Then stop and go back to `iouring-net-lib`.**
+**Then stop and go back to `engine-uring`.**

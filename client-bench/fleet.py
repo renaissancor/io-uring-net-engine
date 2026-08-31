@@ -78,7 +78,7 @@ def main():
         print(f"[fleet] warning: {args.conns} conns per node from one source "
               f"IP is near the 28,232 ephemeral port limit; pass --src-ips 2")
 
-    dump_dir = args.dump_dir or tempfile.mkdtemp(prefix="netbench-")
+    dump_dir = args.dump_dir or tempfile.mkdtemp(prefix="client-bench-")
     os.makedirs(dump_dir, exist_ok=True)
 
     extra = list(args.passthrough)

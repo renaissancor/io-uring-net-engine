@@ -1,5 +1,5 @@
 ---
-# Static analysis configuration for iouring-net-lib.
+# Static analysis configuration for engine-uring.
 # Run with: clang-tidy --quiet path/to/file.cpp -- -std=c++20
 
 Checks: >

@@ -139,8 +139,13 @@ orthogonal.
 
 ### CMake target name
 
-The CMake export target remains `iouring_net::iouring_net` (matches
-the repo name `iouring-net-lib`). This is independent of the C++
+The CMake export target remains `iouring_net::iouring_net`. It no
+longer matches the directory name (`engine-uring/`), and deliberately
+so: the target name is the installed package's public identity, which
+`find_package(iouring_net)` in a consumer depends on, while the
+directory name is this monorepo's internal layout. Renaming the target
+to follow a directory rename would break every consumer to fix
+nothing. This is independent of the C++
 namespace tree — CMake target naming and C++ namespacing don't have
 to match. cf. Boost (`Boost::boost` CMake → `boost::` C++).
 
@@ -181,7 +186,7 @@ mirroring `src/`. Library-wide docs (architecture, build, conventions)
 live under `doc/`.
 
 ```
-iouring-net-lib/
+engine-uring/
 ├── src/
 │   ├── data_structure/   ring_buffer, serial_buffer, cstr_hash_map,
 │   │                     indexed_heap, malloc_vector

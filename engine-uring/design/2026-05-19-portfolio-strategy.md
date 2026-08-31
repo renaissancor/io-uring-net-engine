@@ -1,6 +1,6 @@
 # Portfolio Strategy Discussion — 2026-05-19
 
-> **Superseded by 2026-05-21 scope decision:** This repo (`iouring-net-lib`) now ships **chat server only** as its complete portfolio deliverable. Layer 3 (MMORTS / primitive MMO / renderer thread) has moved to a **separate future repository** (name TBD). The three-layer plan below is preserved as historical context — it explains the decision lineage, but the v1 ship plan is chat-only. See `.omc/wiki/chat-server-v1-session-and-auth-design.md` and `project-portfolio-scope` memory for the current scope.
+> **Superseded by 2026-05-21 scope decision:** This repo (`engine-uring`) now ships **chat server only** as its complete portfolio deliverable. Layer 3 (MMORTS / primitive MMO / renderer thread) has moved to a **separate future repository** (name TBD). The three-layer plan below is preserved as historical context — it explains the decision lineage, but the v1 ship plan is chat-only. See `.omc/wiki/chat-server-v1-session-and-auth-design.md` and `project-portfolio-scope` memory for the current scope.
 
 Companion record to `2026-05-19-server-architecture.md`. Captures the portfolio
 positioning, the three-layer plan, the genre decision for the portfolio game,
@@ -12,7 +12,7 @@ and the reasoning behind each step.
 
 **The plan**: three layers, each shippable individually, each building on the last.
 
-1. **Network library** (`iouring-net-lib`) — the systems portfolio piece. Already designed; needs implementation.
+1. **Network library** (`engine-uring`) — the systems portfolio piece. Already designed; needs implementation.
 2. **Chat server** — proves the framework handles messaging. Recognizable demo.
 3. **Faction-based squad-commander MMORTS** — proves the framework handles game-style real-time simulation. Genre: 2D top-down where you play a centurion/captain controlling 5–10 autonomous AI soldiers, in a faction at persistent war with one or more other factions. (Evolved from the earlier "squad-commander mock MMO" framing — see Part on faction-based design below.)
 
