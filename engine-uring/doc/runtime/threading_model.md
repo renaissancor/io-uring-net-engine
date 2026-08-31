@@ -9,7 +9,7 @@
 > storage with session-as-handle. What is UNCHANGED: single-thread
 > content layer, never-block-on-cross-thread-locks principle,
 > per-session SPSC ring primitive, `LNX_CHECK` / `tl::expected` error
-> model. See `design/2026-05-19-chat-server-data-layout.md`
+> model. See `../design-notes/2026-05-19-chat-server-data-layout.md`
 > and the `project-chat-server-v1` memory entry for the current
 > shape.
 

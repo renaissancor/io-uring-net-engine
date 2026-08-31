@@ -101,5 +101,5 @@ and is joinable; detach; move ctor/assign transfer ownership; `native_handle`
 
 ## Rationale
 
-- `design/2026-05-25-handle-engine-split.md` — how the handle/engine split drives threads.
+- `../design-notes/2026-05-25-handle-engine-split.md` — how the handle/engine split drives threads.
 - Trap-not-terminate rationale shared with [[check]] and [[mutex]].

@@ -67,5 +67,5 @@ builds pass on both presets.
 
 ## Rationale
 
-- `design/` — no-`std::` primitive ethos (no `<cassert>`/`abort`/exceptions).
+- `../design-notes/` — no-`std::` primitive ethos (no `<cassert>`/`abort`/exceptions).
 - Trap-not-terminate rationale mirrored in [[thread]] (join/detach traps).

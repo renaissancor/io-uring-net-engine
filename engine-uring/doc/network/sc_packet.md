@@ -9,7 +9,7 @@
 > `write<T>`, `write_string`, `finalize`), wire format, and
 > content-thread-local lifetime are UNCHANGED. The packet_pool
 > allocation step is being reconsidered. See
-> `design/2026-05-19-chat-server-data-layout.md` and the
+> `../design-notes/2026-05-19-chat-server-data-layout.md` and the
 > `project-chat-server-v1` memory entry for the current shape.
 
 ## Purpose

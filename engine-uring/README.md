@@ -110,7 +110,7 @@ Documentation is split into three trees:
   (`doc/INDEX.md` is the entry point: build order + dependency graph), and
   per-source-file specs mirroring `src/` 1:1 under `doc/<path>.md`. This is the
   **source of truth** — an agent can implement a unit from its spec alone.
-- **`design/`** — the dated brainstorm journal (the *why*: rationale,
+- **`../design-notes/`** — the dated brainstorm journal (the *why*: rationale,
   alternatives, rejected ideas). Read for context; never a build dependency.
 - **`src/`** — the code.
 
@@ -126,13 +126,13 @@ doc/
 ├── sds/  memory/  sync/  diagnostic/  runtime/  network/  # per-file specs, mirror src/
 └── app/                              # app-layer specs (spsc_mailbox, … as they land)
 
-design/                               # dated brainstorm journal (append-only)
+../design-notes/                      # dated decision journal (append-only, repo root)
 ```
 
 The relocated per-file specs under `doc/<category>/` are still in their original
 prose; reformatting them to `TEMPLATE.md` is ongoing (see `doc/INDEX.md`). The
 `app::` runtime layer is documented in `doc/10-realtime-server-architecture.md`
-plus the decision records under `.omc/wiki/`.
+plus the decision records under `../design-notes/`.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Entry point for building this project from spec.** Each source unit has a spec
 at `doc/<path>.md` mirroring `src/<path>.h[/.cpp]` 1:1. `doc/` is the **source of
-truth**: implement from the specs alone. The "why" lives in `design/` (dated
+truth**: implement from the specs alone. The "why" lives in `../design-notes/` (dated
 journal) — read it for context, never as a build dependency.
 
 - **Project guides** (build, style, CI, architecture) live at `doc/` root.
@@ -111,6 +111,6 @@ and those three specs are treated as **planned**, not landed.
 `worker_engine/acceptor`, `main`, `detail/thread_role` (only `mesh`
 exists). These document current work and have no relocated predecessor.
 
-> Layout migration is **done**: brainstorm → `design/`, per-file specs and
+> Layout migration is **done**: brainstorm → `../design-notes/`, per-file specs and
 > project guides → `doc/`. `doc/app/mesh.md` is the filled reference
 > shape; match it when reformatting the relocated specs.

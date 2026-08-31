@@ -100,5 +100,5 @@ min/max/total/count; per-thread isolation (two threads' managers are distinct);
 ## Rationale
 
 - Per-thread TLS design is the multithreading strategy, not a single-thread
-  limitation — see `design/` and the profiler TLS decision.
+  limitation — see `../design-notes/` and the profiler TLS decision.
 - Depends on [[cstr_hash_map]] (borrowed-key) and [[malloc_vector]] (no-`new` growth).

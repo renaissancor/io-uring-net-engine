@@ -2,7 +2,7 @@
 
 Durable source of truth for the runtime shape. This is a **live design doc**,
 not a historical log — keep it short enough to stay current. Dated design
-discussions live under `design/`; decision records live in the
+discussions live under `../design-notes/`; decision records live in the
 `.omc/wiki/` and `doc/` trees.
 
 ---

@@ -3,7 +3,7 @@
 This file indexes the **project-level guides** at `doc/` root. The
 **per-source-file specs** live under `doc/<category>/` mirroring `src/`; their
 build order and dependency graph are in [`INDEX.md`](INDEX.md) (the entry point
-for building from spec). The *why* — dated rationale — lives in `design/`.
+for building from spec). The *why* — dated rationale — lives in `../design-notes/`.
 
 ## What each guide covers
 
@@ -17,7 +17,7 @@ for building from spec). The *why* — dated rationale — lives in `design/`.
 | [`06-system-setup.md`](06-system-setup.md)  | new contributor       | Distro-specific install runbook, smoke tests, kernel sanity check.                                     |
 | [`07-ci-and-reproducibility.md`](07-ci-and-reproducibility.md) | release engineer | CI matrix, floor job, Dockerfile, devcontainer, `version-snapshot.txt`.                            |
 | [`08-test-strategy.md`](08-test-strategy.md) | test author          | Test pyramid, per-subsystem coverage targets, sanitizer policy, wire-format parity test.              |
-| [`09-project-split.md`](../../paper-design/09-project-split.md) | architect, integrator | Library / product two-repo architecture, boundary criteria, `find_package` seam, when to split. *(Historical — the split was later rejected; monorepo now.)* |
+| [`09-project-split.md`](../../design-notes/09-project-split.md) | architect, integrator | Library / product two-repo architecture, boundary criteria, `find_package` seam, when to split. *(Historical — the split was later rejected; monorepo now.)* |
 | [`10-realtime-server-architecture.md`](10-realtime-server-architecture.md) | everyone | Runtime shape, thread roles, ownership invariants, client state machine, first three-thread milestone. |
 
 The `03-` slot is intentionally empty; an earlier

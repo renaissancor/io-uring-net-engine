@@ -9,7 +9,7 @@
 > layout, opcode-direction convention, sequence/flags/version
 > semantics, little-endian wire format, and design rationale in this
 > spec are UNCHANGED. See
-> `design/2026-05-19-chat-server-data-layout.md` and the
+> `../design-notes/2026-05-19-chat-server-data-layout.md` and the
 > `project-chat-server-v1` memory entry for the current shape.
 
 ## Purpose

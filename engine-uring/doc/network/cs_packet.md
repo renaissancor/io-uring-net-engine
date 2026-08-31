@@ -9,7 +9,7 @@
 > path. The typed read API (`read<T>`, `read_string`, `read_bytes`)
 > and lifetime contract (valid for one dispatch call) are UNCHANGED;
 > only the underlying storage model changes. See
-> `design/2026-05-19-chat-server-data-layout.md` and the
+> `../design-notes/2026-05-19-chat-server-data-layout.md` and the
 > `project-chat-server-v1` memory entry for the current shape.
 
 ## Purpose

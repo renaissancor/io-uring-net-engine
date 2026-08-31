@@ -10,7 +10,7 @@
 > the table). The bucket-sized free-list pattern in this spec stays
 > valuable wherever a content-thread-local packet-shaped object is
 > needed, but is no longer mandatory on the hot inbound/outbound
-> paths. See `design/2026-05-19-chat-server-data-layout.md`
+> paths. See `../design-notes/2026-05-19-chat-server-data-layout.md`
 > and the `project-chat-server-v1` memory entry for the current shape.
 
 ## Purpose

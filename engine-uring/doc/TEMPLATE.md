@@ -6,8 +6,8 @@
   src/<path>.h[/.cpp]).
 
   CONTRACT: doc/ is the SOURCE OF TRUTH. An agent must be able to implement the
-  unit from THIS FILE ALONE — without opening design/. If it can't, the spec is
-  incomplete. The "why" lives in design/; link to it, never depend on it.
+  unit from THIS FILE ALONE — without opening ../design-notes/. If it can't, the spec is
+  incomplete. The "why" lives in ../design-notes/; link to it, never depend on it.
 
   Keep the ## API block exact and normative — those signatures ARE the contract.
   Delete this comment in real specs.
@@ -65,4 +65,4 @@ per case.
 ## Rationale
 
 One-way links into the journal for the "why" (human-only; the spec above is
-self-sufficient without them): `design/<date>-<topic>.md`, `.omc/wiki/<page>.md`.
+self-sufficient without them): `../design-notes/<date>-<topic>.md`, `.omc/wiki/<page>.md`.

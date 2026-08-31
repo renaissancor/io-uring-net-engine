@@ -140,5 +140,5 @@ public:
 ## Rationale
 
 - `.omc/wiki/inter-thread-comms-spsc-mesh-pattern.md` — SPSC-everywhere mesh decision
-- `design/2026-05-19-chat-server-data-layout.md` — recv/send ring sizing
+- `../design-notes/2026-05-19-chat-server-data-layout.md` — recv/send ring sizing
 - Supersedes the pre-`810ae50` growable-ring design still described in git history.

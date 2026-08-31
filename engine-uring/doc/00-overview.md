@@ -65,7 +65,7 @@ reserved and not yet written; it will consume this library through
 `find_package(iouring_net)` against an install prefix, never through a
 relative include. That boundary is the point and survives the two
 projects sharing one repo. See
-[`09-project-split.md`](../../paper-design/09-project-split.md) for the full
+[`09-project-split.md`](../../design-notes/09-project-split.md) for the full
 library/product architecture, boundary criteria, and the seam that
 connects the two projects.
 
@@ -135,7 +135,7 @@ This is a design-doc honesty marker, not a problem.
    `N_workers = 1`; the same shape scales to N>1 unchanged. See
    `.omc/wiki/threading-model-per-worker-io-uring-copy-via-inbox.md`,
    `.omc/wiki/worker-class-and-thread-roles.md`, and
-   `design/2026-05-19-server-architecture.md` (historical, pre-pivot).
+   `../design-notes/2026-05-19-server-architecture.md` (historical, pre-pivot).
 
 2. **One reactor per thread, optionally one thread.** v1 ships
    single-threaded. Multi-threaded support is a v2 concern, designed for but

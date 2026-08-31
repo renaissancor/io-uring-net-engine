@@ -89,5 +89,5 @@ non-movable element type.
 ## Rationale
 
 - Built to hold `app::worker_ctl` (non-movable, address-pinned) in the
-  supervisor's LANDLORD worker table — see `design/2026-05-25-handle-engine-split.md`.
+  supervisor's LANDLORD worker table — see `../design-notes/2026-05-25-handle-engine-split.md`.
 - Pairs with the non-movable [[ring_buffer]] storage rule.
