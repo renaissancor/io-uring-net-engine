@@ -1,5 +1,14 @@
 # 06 — Test strategy
 
+> **Layer model authoritative; code examples stale (2026-07-04).** The
+> pyramid, parity replay, fuzz plan, and sanitizer matrix below stand.
+> The coroutine fixtures / `iouring_net::service` snippets predate the
+> library pivot — Layer 2's concrete pattern is now the lib's
+> `tests/net/echo_smoke_test.cpp` (threads + loopback + atomics
+> handshake). Implementation status lives in
+> [`08-architecture-pivot.md`](08-architecture-pivot.md) § "Testing
+> architecture".
+
 The library's test strategy is the floor; this document specifies what
 the product **adds** above that. See
 [`iouring-net-lib/docs/08-test-strategy.md`](../../iouring-net-lib/docs/08-test-strategy.md)

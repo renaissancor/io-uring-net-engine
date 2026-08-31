@@ -1,5 +1,12 @@
 # 00 — Overview
 
+> **⚠ Partially superseded (2026-07-04).** Written 2026-05-14, before
+> the library's pivot (no coroutines; supervisor/acceptor/worker
+> thread model; chat server moved into the lib repo). See
+> [`08-architecture-pivot.md`](08-architecture-pivot.md) for what
+> survives; the codegen pipeline, wire format, and repo-split tenets
+> here remain valid.
+
 Entry point for the `iouring-net-server` design. Defines mission,
 scope, the application-layer architecture map, design tenets, and a
 glossary. Read alongside

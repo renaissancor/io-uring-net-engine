@@ -9,13 +9,31 @@ relative `#include` into its source tree.
 
 ## Status
 
-**Doc-first planning stage as of 2026-05-14.** No code, no
-`CMakeLists.txt`, no executables yet. The library's network layer
-(`session`, `listener`, `packet_framing`) lands first; this repo
-becomes buildable in the milestone after that.
+**v0 seam proof landed 2026-07-04.** The repo builds: CMake presets,
+`find_package(iouring_net)` against a `~/.local` install, a
+`server_core` static lib + thin `iouring_net-server` binary, and a
+Catch2 test harness (8 tests green under ASan+UBSan via `make test`).
 
-What exists now: architectural specs in `docs/` and per-component
-designs in `wiki/`. Same two-tier doc layout as the library.
+**Read [`docs/08-architecture-pivot.md`](docs/08-architecture-pivot.md)
+first.** The library pivoted after docs 00–07 were written (no
+coroutines; supervisor/acceptor/worker threads; per-worker io_uring;
+SPSC copy-via-inbox; chat server v1 lives *inside* the lib repo). Per
+the 2026-05-21 scope split, this repo is the **game-server product
+repo**. Doc 08 records what of 00–07 survives, the testing
+architecture as-built, and the seam backlog blocking runtime work.
+
+```bash
+# one-time: install the library
+cmake -S ../iouring-net-lib -B ../iouring-net-lib/build/seam \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local \
+      -DIOURING_NET_BUILD_TESTS=OFF -DIOURING_NET_BUILD_EXAMPLES=OFF
+cmake --build ../iouring-net-lib/build/seam
+cmake --install ../iouring-net-lib/build/seam
+
+# then, in this repo
+make test        # configure + build + ctest (default = ASan+UBSan)
+make run         # build and run the server (--dry-run)
+```
 
 ## Quick map
 

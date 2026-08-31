@@ -1,5 +1,13 @@
 # 01 — Architecture
 
+> **⚠ Superseded in its runtime model (2026-07-04).** The
+> coroutine/`task<T>`/`session` API this document builds on was
+> dropped by the library; the locked model is supervisor + acceptor +
+> N workers with per-worker io_uring and SPSC copy-via-inbox. The
+> module decomposition, codegen split, and dispatcher design remain
+> directionally valid (dispatcher becomes per-worker). See
+> [`08-architecture-pivot.md`](08-architecture-pivot.md).
+
 Component-level architecture of `iouring-net-server`. Where
 `00-overview.md` introduces the application layer at a sketch level,
 this document specifies the concrete components, their interfaces,
