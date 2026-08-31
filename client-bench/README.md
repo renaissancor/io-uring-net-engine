@@ -37,7 +37,7 @@ they point at, but not the directory, and the boundary is load-bearing:
   why one half is C++ and the other is Python.
 
 The measured numbers do not live here either — they are in
-[`../paper-result/`](../paper-result/), so that changing the tool cannot
+[`../result-notes/`](../result-notes/), so that changing the tool cannot
 quietly restate its own results.
 
 ## Layout
@@ -120,7 +120,7 @@ batches more messages into each syscall. Under ~95% the run is definitively
 below the ceiling; at 100% you have learned almost nothing. The signal that
 works is a pair: achieved < offered with self-lag **small** means the server is
 the limit, with self-lag **large** means the client is. See
-[`paper-result/2026-08-30-what-limits-the-server.md`](../paper-result/2026-08-30-what-limits-the-server.md).
+[`result-notes/2026-08-30-what-limits-the-server.md`](../result-notes/2026-08-30-what-limits-the-server.md).
 
 ### Payload: fixed length or real chat
 
@@ -339,7 +339,7 @@ Three settings that had to be right before any of this worked:
 
 The single-threaded epoll baseline, its two flush modes, the fleet-vs-single
 process divergence, and the user/kernel split all live in
-[`../paper-result/`](../paper-result/) — results are kept apart from the tool
+[`../result-notes/`](../result-notes/) — results are kept apart from the tool
 that produced them so that changing the tool cannot quietly restate them.
 
 What stays here is the *method*: what is measured, what makes a run count, and

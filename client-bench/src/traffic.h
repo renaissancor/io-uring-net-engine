@@ -47,7 +47,7 @@ struct traffic_stats {
     // carries almost no information; the LOW reading is the useful one, since
     // under ~95% the run is definitively below the ceiling. For the signal
     // that does work -- achieved-vs-offered paired with self-lag -- and the
-    // cost model, see paper-result/2026-08-30-what-limits-the-server.md.
+    // cost model, see result-notes/2026-08-30-what-limits-the-server.md.
     double    server_cpu_pct  = -1.0;  // % of ONE core, summed user+kernel
     double    server_kern_pct = -1.0;  // kernel share of that, 0..100
 };

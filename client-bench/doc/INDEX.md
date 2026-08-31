@@ -81,7 +81,7 @@ being deleted.
 [`2026-08-17-three-instrument-defects.md`](../design/2026-08-17-three-instrument-defects.md)
 is the worked example. The baseline table in the README will be rewritten the
 day the io_uring server lands; the three traps in that file will still be true.
-[`2026-08-30-what-limits-the-server.md`](../../paper-result/2026-08-30-what-limits-the-server.md)
+[`2026-08-30-what-limits-the-server.md`](../../result-notes/2026-08-30-what-limits-the-server.md)
 is the second: latency is the event loop's sweep period rather than a
 backlog, server CPU% is not a saturation signal, capacity is a delivery-rate
 ceiling independent of connection count, and the attractive explanations that

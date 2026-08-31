@@ -23,7 +23,7 @@ a monorepo makes easy to break by accident.
 
 ## What the design docs say, and how much of it survives
 
-[`../paper-design/09-project-split.md`](../paper-design/09-project-split.md)
+[`../design-notes/09-project-split.md`](../design-notes/09-project-split.md)
 specifies the boundary criteria, what belongs on each side, and the contract
 surface. Read it for the boundary. Ignore its repo topology: it argued for a
 separate repository, that argument was rejected, and the banner at the top of

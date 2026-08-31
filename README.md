@@ -22,12 +22,12 @@ three are here, which is the reason this is one repository.
 | [`server-epoll/`](server-epoll/) | **the control group** | Single-threaded, level-triggered `epoll` chat server. One file, STL, no abstractions — deliberately. It exists to be beaten fairly. |
 | [`client-bench/`](client-bench/) | **the instrument** | Load generator (C++) plus a fleet runner and a correctness judge (Python). Measures connection scale and delivery latency, and **refuses to report a number when the run measured the client instead of the server.** |
 | [`server-uring/`](server-uring/) | **the product** | Reserved. The chat/game server on top of the engine, consuming it through `find_package(iouring_net)` against an install prefix — never a relative include. Not yet written. |
-| [`paper-result/`](paper-result/) | **what was measured** | The epoll baseline, and findings that outlive any particular number. |
-| [`paper-design/`](paper-design/) | **why it is shaped this way** | Cross-cutting design decisions, including the ones that were rejected. |
+| [`result-notes/`](result-notes/) | **what was measured** | The epoll baseline, and findings that outlive any particular number. |
+| [`design-notes/`](design-notes/) | **why it is shaped this way** | Dated decision logs and cross-cutting design records — rationale, alternatives, and the ideas that were rejected. |
 
-Documents that describe a single component live with that component
-(`engine-uring/doc/` is normative and is meant to be read without opening the
-source). Only documents that span components sit in `paper-*`.
+Code documentation lives with its component (`engine-uring/doc/` is normative
+and is meant to be read without opening the source). Decision logs and measured
+findings sit in `*-notes/`, regardless of which component they touch.
 
 ## Where the line currently is
 
@@ -43,13 +43,13 @@ a 3-process fleet:
 That kernel share is the io_uring argument stated as a measurement rather than
 an assumption: the cost being attacked is syscall transitions, and that is
 where the budget actually sits. Full tables, method, and caveats in
-[`paper-result/`](paper-result/).
+[`result-notes/`](result-notes/).
 
 **Two numbers on this page are corrections of earlier ones.** A single client
 process reported latency up to 136× too low near the knee, and 100% CPU turned
 out not to mean saturation — the same server held 100% of a core from 3M to 10M
 deliveries/s. Both are recorded in
-[`paper-result/2026-08-30-what-limits-the-server.md`](paper-result/2026-08-30-what-limits-the-server.md)
+[`result-notes/2026-08-30-what-limits-the-server.md`](result-notes/2026-08-30-what-limits-the-server.md)
 rather than quietly fixed, because the traps outlive the numbers.
 
 ## What makes a number count
@@ -71,7 +71,7 @@ headroom is still a run.
 ## Reading order
 
 1. **This file** — the claim.
-2. [`paper-result/`](paper-result/) — the baseline the engine must beat, and how it was taken.
+2. [`result-notes/`](result-notes/) — the baseline the engine must beat, and how it was taken.
 3. [`client-bench/doc/INDEX.md`](client-bench/doc/INDEX.md) — the instrument's code map: what each unit owns and what it gets wrong.
 4. [`engine-uring/doc/00-overview.md`](engine-uring/doc/00-overview.md) — the engine's layered design, then [`10-realtime-server-architecture.md`](engine-uring/doc/10-realtime-server-architecture.md) for the runtime shape.
 
