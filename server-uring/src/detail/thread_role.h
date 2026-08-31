@@ -11,7 +11,7 @@
 // `static thread_local` from silently constructing a fresh body on
 // the wrong thread — e.g., 573 MiB session SoA on the supervisor).
 
-#include "../../types.h"
+#include "types.h"
 
 namespace app::detail {
 

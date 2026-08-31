@@ -15,7 +15,7 @@
 #include "config.h"
 #include "session_id.h"
 #include "session_record.h"
-#include "../types.h"
+#include "types.h"
 
 namespace app {
 

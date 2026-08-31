@@ -4,9 +4,9 @@
 #include "roster.h"
 #include "worker_engine.h"
 
-#include "../check.h"
-#include "../memory/packet_pool.h"
-#include "../runtime/thread.h"
+#include "check.h"
+#include "memory/packet_pool.h"
+#include "runtime/thread.h"
 
 #include <cstdio>
 #include <pthread.h>

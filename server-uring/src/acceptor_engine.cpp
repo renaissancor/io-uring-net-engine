@@ -3,8 +3,8 @@
 #include "detail/thread_role.h"
 #include "acceptor_ctl.h"
 
-#include "../check.h"
-#include "../runtime/thread.h"
+#include "check.h"
+#include "runtime/thread.h"
 
 namespace app {
 

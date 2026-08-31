@@ -9,9 +9,9 @@
 // See .omc/wiki/ctl-engine-split-pattern.md for the locked design.
 // State transitions follow .omc/wiki/worker-lifecycle-three-state-protocol.md.
 
-#include "../runtime/thread.h"
-#include "../sync/atomic.h"
-#include "../types.h"
+#include "runtime/thread.h"
+#include "sync/atomic.h"
+#include "types.h"
 
 namespace app {
 

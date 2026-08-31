@@ -15,7 +15,7 @@
 // confirm the whole body is present, and only then consume the frame.
 
 #include "session_id.h"
-#include "../types.h"
+#include "types.h"
 
 namespace app {
 

@@ -57,7 +57,7 @@ is available unchanged.
 ## Test plan
 
 Covered by `tests/sds/ring_buffer_test.cpp` (the `ring_sync::spsc` cases,
-including the 1M-frame FIFO stress) and `tests/app/mesh_test.cpp` (framing over
+including the 1M-frame FIFO stress) and `../../server-uring/tests/mesh_test.cpp` (framing over
 `sds::pipe`, including wrap-straddling frames).
 
 ## Done when
@@ -69,4 +69,4 @@ including the 1M-frame FIFO stress) and `tests/app/mesh_test.cpp` (framing over
 ## Rationale
 
 - `doc/sds/ring_buffer.md` — the shared mechanism
-- `doc/app/mesh.md` — the framing layer on top
+- `../../server-uring/doc/mesh.md` — the framing layer on top

@@ -11,7 +11,7 @@
 // it hands the fd to a worker; "authority" here means the mapping, not the I/O.
 
 #include "session_id.h"
-#include "../types.h"
+#include "types.h"
 
 namespace app {
 

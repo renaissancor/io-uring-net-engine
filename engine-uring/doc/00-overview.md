@@ -19,7 +19,7 @@ latency**, not raw throughput: a packet arriving for an in-world session is
 completed, parsed, validated, and applied to authoritative state by the same
 worker thread that owns that state. The runtime shape, ownership invariants, and
 first three-thread milestone live in
-[`10-realtime-server-architecture.md`](10-realtime-server-architecture.md); this
+[`10-realtime-server-architecture.md`](../../server-uring/doc/10-realtime-server-architecture.md); this
 overview covers the layered subsystem map and cross-cutting tenets.
 
 **Ownership invariants** (full statement in doc 10): one fd → one owner thread;

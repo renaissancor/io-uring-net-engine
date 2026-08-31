@@ -9,7 +9,7 @@
 // roster.h. Anything that decides how many threads exist, or how much storage
 // they own, is a compile-time constant by design — see roster.h for why.
 
-#include "../types.h"
+#include "types.h"
 
 namespace app {
 

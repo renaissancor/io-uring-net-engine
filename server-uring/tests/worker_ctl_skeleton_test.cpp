@@ -17,9 +17,9 @@
 // not exist in this binary's roster. Each TEST_CASE owns its own worker_ctl in
 // its own scope, so they never need distinct ids.
 
-#include "app/config.h"
-#include "app/thread_ctl.h"
-#include "app/worker_ctl.h"
+#include "config.h"
+#include "thread_ctl.h"
+#include "worker_ctl.h"
 #include "runtime/thread.h"
 #include "types.h"
 

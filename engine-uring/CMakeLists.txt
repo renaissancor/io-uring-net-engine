@@ -25,28 +25,11 @@ include(compiler-warnings)
 # ---------------------------------------------------------------------------
 add_library(iouring_net STATIC
   src/_placeholder.cpp
-  src/app/detail/thread_role.cpp
-  src/app/acceptor_engine.cpp
-  src/app/worker_engine.cpp
-  src/app/acceptor_ctl.cpp
-  src/app/thread_ctl.cpp
-  src/app/worker_ctl.cpp
-  src/app/session_table.cpp
   src/diagnostic/profiler_scope.cpp
   src/memory/packet_pool.cpp)
 add_library(iouring_net::iouring_net ALIAS iouring_net)
 
 target_compile_features(iouring_net PUBLIC cxx_std_20)
-
-# Thread roster size — COMPILE-TIME, see src/app/roster.h. The roster is fixed
-# before runtime by design; this is a build-time knob, not a config field.
-# Configure with -DIOURING_NET_WORKER_COUNT=4 to produce a variant binary so a
-# worker-count sweep stays cheap to benchmark. PUBLIC so `server` and the test
-# suite compile against the same roster as the library.
-set(IOURING_NET_WORKER_COUNT "1" CACHE STRING
-  "Worker threads in the thread roster (1..8, fixed at compile time)")
-target_compile_definitions(iouring_net PUBLIC
-  IOURING_NET_WORKER_COUNT=${IOURING_NET_WORKER_COUNT})
 
 # Public API surface — explicit allowlist via FILE_SET HEADERS.
 # Every file listed here is installed and reachable from consumers
@@ -61,11 +44,16 @@ target_sources(iouring_net
     BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
     FILES
       src/types.h
+      src/check.h
       src/error/expected.h
       src/diagnostic/profiler_scope.h
+      src/memory/packet_pool.h
+      src/runtime/thread.h
       src/sds/cstr_hash_map.h
       src/sds/malloc_vector.h
+      src/sds/pipe.h
       src/sds/ring_buffer.h
+      src/sds/static_vector.h
       src/sync/atomic.h)
 
 target_include_directories(iouring_net PUBLIC
@@ -80,13 +68,6 @@ target_link_libraries(iouring_net
     tl::expected)
 
 iouring_net_apply_warnings(iouring_net)
-
-# ---------------------------------------------------------------------------
-# Server executable — supervisor / acceptor / worker runtime entry point
-# ---------------------------------------------------------------------------
-add_executable(server src/app/main.cpp)
-target_link_libraries(server PRIVATE iouring_net::iouring_net)
-iouring_net_apply_warnings(server)
 
 # ---------------------------------------------------------------------------
 # Install / export

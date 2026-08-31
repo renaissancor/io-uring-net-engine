@@ -23,10 +23,10 @@
 #include "roster.h"
 #include "worker_ctl.h"
 
-#include "../check.h"
-#include "../runtime/thread.h"
-#include "../sds/static_vector.h"
-#include "../types.h"
+#include "check.h"
+#include "runtime/thread.h"
+#include "sds/static_vector.h"
+#include "types.h"
 
 #include <csignal>
 #include <cstdio>

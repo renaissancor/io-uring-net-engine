@@ -4,8 +4,8 @@
 // state/owner transitions, removal + slot reuse, and full-table refusal. This
 // is the acceptor-side truth map; it holds no fd or ring state.
 
-#include "app/config.h"
-#include "app/session_table.h"
+#include "config.h"
+#include "session_table.h"
 
 #include <catch2/catch_test_macros.hpp>
 

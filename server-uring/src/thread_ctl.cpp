@@ -1,6 +1,6 @@
 #include "thread_ctl.h"
 
-#include "../check.h"
+#include "check.h"
 
 namespace app {
 

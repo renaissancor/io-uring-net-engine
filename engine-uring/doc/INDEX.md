@@ -33,42 +33,14 @@ higher tier. Pick any order within a tier.
 | `memory/packet_pool` | `src/memory/packet_pool.{h,cpp}` | landed | types, check | _todo_ |
 | `runtime/thread` | `src/runtime/thread.h` | landed | check | _todo_ |
 
-### Tier 2 — app identity & mesh vocabulary
-| Unit | Source | Status | Depends | Spec |
-|---|---|---|---|---|
-| `app/config` | `src/app/config.h` | landed | types | _todo_ |
-| `app/session_id` | `src/app/session_id.h` | landed | types | _todo_ |
-| `app/message` | `src/app/message.h` | landed | session_id, types | _todo_ |
-| `app/session_record` | `src/app/session_record.h` | landed | session_id, types | _todo_ |
-| `app/detail/thread_role` | `src/app/detail/thread_role.{h,cpp}` | landed | types | _todo_ |
+### Tiers 2+ — the app runtime (moved)
 
-### Tier 3 — mesh transport & authority
-| Unit | Source | Status | Depends | Spec |
-|---|---|---|---|---|
-| `app/mesh` | `src/app/mesh.h` | landed | message, sds::pipe, check, types | [spec](app/mesh.md) |
-| `app/session_table` | `src/app/session_table.{h,cpp}` | landed | config, session_id, session_record | _todo_ |
-
-### Tier 4 — thread control blocks & engines
-| Unit | Source | Status | Depends | Spec |
-|---|---|---|---|---|
-| `app/thread_ctl` | `src/app/thread_ctl.{h,cpp}` | landed | runtime/thread, sync/atomic, types | _todo_ |
-| `app/worker_ctl` | `src/app/worker_ctl.{h,cpp}` | landed | thread_ctl, config, mesh | _todo_ |
-| `app/acceptor_ctl` | `src/app/acceptor_ctl.{h,cpp}` | landed | thread_ctl, config, mesh | _todo_ |
-| `app/worker_engine` | `src/app/worker_engine.{h,cpp}` | in-progress | worker_ctl, thread_role | _todo_ |
-| `app/acceptor_engine` | `src/app/acceptor_engine.{h,cpp}` | in-progress | acceptor_ctl, thread_role | _todo_ |
-
-### Tier 5 — supervisor
-| Unit | Source | Status | Depends | Spec |
-|---|---|---|---|---|
-| `app/main` | `src/app/main.cpp` | landed | config, ctls, mesh, static_vector | _todo_ |
-
-### Tier 6 — data path (planned; see `doc/10-realtime-server-architecture.md` + `handoff.md`)
-| Unit | Source | Status | Depends | Spec |
-|---|---|---|---|---|
-| `app/protocol` | `src/app/protocol.{h,cpp}` | planned | message, types | _todo_ |
-| `app/session` (worker-side, SoA/mmap) | `src/app/session.*` | planned | ring_buffer, session_id | _todo_ |
-| `app/world_room` | `src/app/world_room.{h,cpp}` | planned | session_id | _todo_ |
-| engine data-path loop | `worker_engine` / `acceptor_engine` | planned | all of tiers 0–4 | _todo_ |
+The app layer — identity & mesh vocabulary, mesh transport & authority,
+thread control blocks & engines, supervisor, and the planned data path —
+migrated to [`../../server-uring/`](../../server-uring/) together with its
+sources and tests. Its build-order tiers continue in
+[`../../server-uring/doc/INDEX.md`](../../server-uring/doc/INDEX.md); they
+depend on tiers 0–1 here only through the engine's installed public headers.
 
 ---
 
@@ -90,7 +62,7 @@ Reconciling relocated specs to `TEMPLATE.md` surfaced that several described
 **Reconciled to the built API** (template form, verified against the header):
 `sds/ring_buffer`, `sds/static_vector`, `sds/cstr_hash_map`, `sds/malloc_vector`,
 `sync/atomic`, `sync/mutex`, `runtime/thread`, `diagnostic/profiler_scope`,
-`check`; plus `app/mesh` and `sds/pipe` (reference shape).
+`check`; plus `sds/pipe` and (now in `../../server-uring/doc/`) `mesh` (reference shape).
 
 **Drift corrected along the way:**
 - `ring_buffer` — old spec described a fully **retired** growable `char*` ring.
@@ -106,11 +78,6 @@ describe **different, unbuilt** designs. Deciding which design is the future
 discussion; until then, `doc/memory/packet_pool.md` is intentionally unwritten
 and those three specs are treated as **planned**, not landed.
 
-**Not yet written — `app/` layer specs:** `message`, `session_id`,
-`session_record`, `config`, `session_table`, `thread_ctl/worker/acceptor`,
-`worker_engine/acceptor`, `main`, `detail/thread_role` (only `mesh`
-exists). These document current work and have no relocated predecessor.
-
 > Layout migration is **done**: brainstorm → `../design-notes/`, per-file specs and
-> project guides → `doc/`. `doc/app/mesh.md` is the filled reference
-> shape; match it when reformatting the relocated specs.
+> project guides → `doc/`. `../../server-uring/doc/mesh.md` is the filled
+> reference shape; match it when reformatting the relocated specs.

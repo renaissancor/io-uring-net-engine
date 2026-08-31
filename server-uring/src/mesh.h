@@ -31,9 +31,9 @@
 // buffers. Raise it when a new message body approaches it.
 
 #include "message.h"
-#include "../check.h"
-#include "../sds/pipe.h"
-#include "../types.h"
+#include "check.h"
+#include "sds/pipe.h"
+#include "types.h"
 
 namespace app {
 

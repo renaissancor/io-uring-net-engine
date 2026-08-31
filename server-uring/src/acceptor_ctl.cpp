@@ -3,9 +3,9 @@
 #include "detail/thread_role.h"
 #include "acceptor_engine.h"
 
-#include "../check.h"
-#include "../memory/packet_pool.h"
-#include "../runtime/thread.h"
+#include "check.h"
+#include "memory/packet_pool.h"
+#include "runtime/thread.h"
 
 #include <pthread.h>
 

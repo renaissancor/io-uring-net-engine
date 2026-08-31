@@ -11,8 +11,8 @@
 // Single-threaded alternation is a legal spsc use (at most one writer, at most
 // one reader — never concurrent here).
 
-#include "app/mesh.h"
-#include "app/message.h"
+#include "mesh.h"
+#include "message.h"
 
 #include <catch2/catch_test_macros.hpp>
 

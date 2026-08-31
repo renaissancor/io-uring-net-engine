@@ -12,7 +12,7 @@
 //   room_id     interaction-space id; 0 is the reserved "no room" sentinel.
 //   worker_id   owner-thread index into the worker pool (0 .. k_worker_count-1).
 
-#include "../types.h"
+#include "types.h"
 
 namespace app {
 

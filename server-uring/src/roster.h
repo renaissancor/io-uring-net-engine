@@ -33,7 +33,7 @@
 // `-DIOURING_NET_WORKER_COUNT=4` to produce a variant binary. Benchmarking a
 // sweep of worker counts stays cheap; a running server's roster stays fixed.
 
-#include "../types.h"
+#include "types.h"
 
 namespace app::roster {
 

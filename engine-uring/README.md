@@ -11,21 +11,22 @@ realtime interaction load. It carries the engine-primitives lessons of the
 Windows IOCP family of reference projects (architectural inspiration, not a
 compatibility goal) onto a 2026-relevant Linux stack.
 
-See [`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md)
+See [`../server-uring/doc/10-realtime-server-architecture.md`](../server-uring/doc/10-realtime-server-architecture.md)
 for the runtime shape, ownership invariants, and the first three-thread
-milestone. (No coroutines are implemented yet — the runtime path is hand-written
+milestone (the runtime itself lives in `../server-uring/`, consuming this
+engine through its install prefix). (No coroutines are implemented yet — the runtime path is hand-written
 `io_uring` SQEs; the identity is deliberately not tied to coroutines until such
 code exists.)
 
 Landed so far: the CMake scaffolding + dependency graph (`liburing`, `{fmt}`,
 `Catch2`, `tl::expected`) + CI floor job, the primitive layer
 (`sds::ring_buffer`, `mem::packet_pool`, `sync::` atomics/mutex,
-`diagnostic::profiler_scope`), the 3-role supervisor/acceptor/worker boot spine,
-and the thread-mesh primitives (`app::spsc_mailbox`, `app::session_table`). The
-data path on top — protocol framing, worker-side session storage, rooms, and the
-per-worker `io_uring` chat loop — is the current work. Per-file design specs live
-under `doc/<category>/<name>.md`; the runtime architecture lives in
-`doc/10-realtime-server-architecture.md`.
+`diagnostic::profiler_scope`), and — now in `../server-uring/` — the 3-role supervisor/acceptor/worker boot
+spine and the thread-mesh runtime (`app::spsc_mailbox`, `app::session_table`).
+The data path on top — protocol framing, worker-side session storage, rooms, and
+the per-worker `io_uring` chat loop — is the current work. Per-file design specs
+live under `doc/<category>/<name>.md`; the runtime architecture lives in
+`../server-uring/doc/10-realtime-server-architecture.md`.
 
 ---
 
@@ -77,7 +78,7 @@ v1 milestone is **a single SessionManager + one WorldThread carrying room
 chat** (connect → room select → chat → disconnect), not merely an echo server
 over one connection. The `io_uring` echo smoke remains a low-level transport
 test, not the product milestone. See
-[`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md).
+[`../server-uring/doc/10-realtime-server-architecture.md`](../server-uring/doc/10-realtime-server-architecture.md).
 
 In scope for v1:
 
@@ -115,24 +116,24 @@ Documentation is split into three trees:
 - **`src/`** — the code.
 
 Start with `doc/INDEX.md`, then `doc/00-overview.md` for scope and the layered
-map, and `doc/10-realtime-server-architecture.md` for the runtime shape.
+map, and `../server-uring/doc/10-realtime-server-architecture.md` for the runtime shape.
 
 ```
 doc/
 ├── INDEX.md                          # build order + dependency graph (start here)
 ├── TEMPLATE.md                       # per-file spec template
 ├── README.md                         # reading-path index
-├── 00-overview.md … 10-realtime-server-architecture.md   # project guides
-├── sds/  memory/  sync/  diagnostic/  runtime/  network/  # per-file specs, mirror src/
-└── app/                              # app-layer specs (spsc_mailbox, … as they land)
+├── 00-overview.md … 08-test-strategy.md                  # project guides
+└── sds/  memory/  sync/  diagnostic/  runtime/  network/  # per-file specs, mirror src/
 
 ../design-notes/                      # dated decision journal (append-only, repo root)
 ```
 
 The relocated per-file specs under `doc/<category>/` are still in their original
 prose; reformatting them to `TEMPLATE.md` is ongoing (see `doc/INDEX.md`). The
-`app::` runtime layer is documented in `doc/10-realtime-server-architecture.md`
-plus the decision records under `../design-notes/`.
+`app::` runtime layer moved to `../server-uring/` and is documented there
+(`doc/10-realtime-server-architecture.md`) plus the decision records under
+`../design-notes/`.
 
 ---
 
@@ -147,11 +148,12 @@ gcc-12 floor preset):
   `sds::cstr_hash_map`, `sds::malloc_vector`, `mem::packet_pool`, `sync::`
   atomics/mutex, `diagnostic::profiler_scope`.
 - Runtime spine — 3-role supervisor boot (main / acceptor / worker), the
-  handle/engine split, and an `io_uring` echo *transport* smoke.
-- Thread mesh — `app::spsc_mailbox` (whole-frame SPSC) + the SessionManager
-  `app::session_table` authority map, both unit-tested and wired into the boot.
+  handle/engine split, and an `io_uring` echo *transport* smoke. The spine and
+  the thread mesh (`app::spsc_mailbox`, `app::session_table`) migrated to
+  [`../server-uring/`](../server-uring/) with their tests; the engine keeps the
+  transport smoke and everything below the app layer.
 
 **In progress** — the room-chat data path: protocol framing, worker-side
 session storage (SoA/mmap), rooms, and the per-worker `io_uring` chat loop, ending
 at the single-SessionManager + one-WorldThread milestone in
-[`doc/10-realtime-server-architecture.md`](doc/10-realtime-server-architecture.md).
+[`../server-uring/doc/10-realtime-server-architecture.md`](../server-uring/doc/10-realtime-server-architecture.md).

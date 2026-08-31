@@ -21,7 +21,7 @@ three are here, which is the reason this is one repository.
 | [`engine-uring/`](engine-uring/) | **the engine** | C++20 `io_uring` runtime — supervisor/acceptor/worker threads, per-worker rings, memory and object pools, lock-free structures, `sds::` containers (the STL is banned), profiler and leak tracker. The largest body of work here. |
 | [`server-epoll/`](server-epoll/) | **the control group** | Single-threaded, level-triggered `epoll` chat server. One file, STL, no abstractions — deliberately. It exists to be beaten fairly. |
 | [`client-bench/`](client-bench/) | **the instrument** | Load generator (C++) plus a fleet runner and a correctness judge (Python). Measures connection scale and delivery latency, and **refuses to report a number when the run measured the client instead of the server.** |
-| [`server-uring/`](server-uring/) | **the product** | Reserved. The chat/game server on top of the engine, consuming it through `find_package(iouring_net)` against an install prefix — never a relative include. Not yet written. |
+| [`server-uring/`](server-uring/) | **the product** | The chat/game server on top of the engine — supervisor/acceptor/worker runtime, thread mesh, session authority — consuming it through `find_package(iouring_net)` against an install prefix, never a relative include. The room-chat data path is the current work. |
 | [`result-notes/`](result-notes/) | **what was measured** | The epoll baseline, and findings that outlive any particular number. |
 | [`design-notes/`](design-notes/) | **why it is shaped this way** | Dated decision logs and cross-cutting design records — rationale, alternatives, and the ideas that were rejected. |
 
@@ -81,8 +81,8 @@ headroom is still a run.
 |---|---|
 | `server-epoll` | complete; baseline measured three times, earlier numbers withdrawn |
 | `client-bench` | complete; fleet mode, correctness judge, verdict gating |
-| `engine-uring` | in progress — primitives, runtime and thread mesh land; 113 tests green |
-| `server-uring` | not started |
+| `engine-uring` | in progress — primitives and transport land; 96 tests green |
+| `server-uring` | in progress — runtime spine and thread mesh moved in, 17 tests green; data path is the current work |
 
 The baseline table gets rewritten the day the io_uring server is measured. The
 traps recorded alongside it will still be true.
@@ -94,10 +94,12 @@ Each component builds independently.
 ```bash
 cd client-bench && make            # loadgen
 cd server-epoll && make            # server  (make asan for the checked build)
-cd engine-uring && make test       # cmake presets; 113 tests
+cd engine-uring && make test       # cmake presets; 96 tests
 ```
 
-`engine-uring` needs `liburing >= 2.5`, `fmt`, and Catch2. The default preset is
+`server-uring` builds against an *installed* engine — see its README for the
+two-step prefix round trip, which CI (`.github/workflows/ci.yml`) exercises on
+every push. `engine-uring` needs `liburing >= 2.5`, `fmt`, and Catch2. The default preset is
 ASan+UBSan — never measure with it, it roughly halves throughput. In every
 component `make` builds the binary you *measure* with and a separate target
 builds the sanitised one; that convention was the other way round once, and it
