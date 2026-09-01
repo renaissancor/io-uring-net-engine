@@ -102,10 +102,19 @@ fast with nothing in the output to say so.
 
 `loadgen` and `merge.py` exit **3** when the verdict is `[VOID]` — the run
 produced numbers and they do not describe the server. `[ OK ]` and `[WARN]`
-both exit 0. Two things void a run: **fan-out drift** past ±5% of `--per-room`,
-checked first, because the offered load is then not the requested one (orphaned
-`loadgen` processes are the usual cause and they read as *higher* throughput —
-check `pgrep -x loadgen`); and **self-lag** too large against latency p99.
+both exit 0. Three things void a run, checked in this order:
+
+1. **Fan-out drift** past ±5% of `--per-room`. First, because the offered load
+   is then not the requested one. Orphaned `loadgen` processes are the usual
+   cause and they read as *higher* throughput — check `pgrep -x loadgen`.
+2. **Connection loss** past 0.5% of `--conns`. Same reason: a connection that
+   dies mid-run stops offering load, so the throughput is an average over a
+   load that changed while it was measured. Usually the server shedding —
+   `server-epoll` closes a connection whose send buffer passes 256 KiB. Fan-out
+   cannot catch this: a closed connection leaves both sides of `frames_in/sent`
+   at once, so the ratio barely moves. A run that lost 1,260 of 10,008
+   connections measured fan-out 9.87, comfortably inside the band.
+3. **Self-lag** too large against latency p99.
 
 `--server-pid` reports the server's CPU over the traffic window:
 

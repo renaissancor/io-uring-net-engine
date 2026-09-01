@@ -234,6 +234,27 @@ def main():
                   f"see which side.")
         return 3
 
+    # Connection loss, for the same reason and with the same force. A
+    # connection that dies mid-run stops offering load, so what was measured
+    # is an average over a load that changed while it was being measured.
+    #
+    # Advisory until 2026-09-01, and it repeated the fan-out defect verbatim:
+    # a fleet run that lost 1,984 of 10,008 connections and delivered 81% of
+    # its offered load printed lost_conns=1984 and then "[ OK ] ... no node
+    # was the bottleneck". Correct about the client, and read as approval of
+    # the number beside it. Every clean rung of both payload ladders measured
+    # exactly zero, so 0.5% is margin rather than a tuned threshold.
+    lost  = scalars.get("lost_conns", 0)
+    total = scalars.get("conns", 0)
+    if total and lost > 0.005 * total:
+        print(f"[VOID] {lost} of {total} connections died during the run "
+              f"({100.0*lost/total:.1f}%) — the offered load fell while it "
+              f"was being measured, so the throughput above is an average "
+              f"over a load nobody chose. Check the server for connection "
+              f"closes (for server-epoll: \"send buffer over cap\"); if the "
+              f"server is shedding, this rate is past its ceiling.")
+        return 3
+
     if lat.total == 0:
         print("[VOID] no latency samples")
         return 3

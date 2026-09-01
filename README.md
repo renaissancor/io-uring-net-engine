@@ -45,6 +45,15 @@ an assumption: the cost being attacked is syscall transitions, and that is
 where the budget actually sits. Full tables, method, and caveats in
 [`result-notes/`](result-notes/).
 
+**The epoll server's own ceiling has now been measured**, by raising the
+payload until the server became byte-bound and its ceiling fell into the load
+generator's reach: **1.70M deliveries/s at 1024 B and 3.50M at 512 B, both
+≈1.78 GB/s**, with the server's connection-close log agreeing with the client's
+count. Past it the server does not degrade gracefully — it closes clients. Two
+of the three thresholds that matter are far below the peak, and the whole
+ladder read 98–101% CPU. See
+[`result-notes/2026-09-01-where-the-epoll-server-saturates.md`](result-notes/2026-09-01-where-the-epoll-server-saturates.md).
+
 **Two numbers on this page are corrections of earlier ones.** A single client
 process reported latency up to 136× too low near the knee, and 100% CPU turned
 out not to mean saturation — the same server held 100% of a core from 3M to 10M
@@ -61,6 +70,11 @@ describe the server:
   then not the requested load, so asking whether the client kept up answers
   nothing. Orphaned load-generator processes are the usual cause, and they read
   as *higher* throughput.
+- **connection loss** past 0.5% of `--conns` — a connection that dies mid-run
+  stops offering load, so the number is an average over a load nobody chose.
+  Usually the server shedding clients, which fan-out cannot see: a closed
+  connection leaves the numerator and denominator of `frames_in/sent` at the
+  same time.
 - **self-lag** too large against latency p99 — the client's own scheduling
   delay is contaminating the histogram.
 
@@ -71,7 +85,7 @@ headroom is still a run.
 ## Reading order
 
 1. **This file** — the claim.
-2. [`result-notes/`](result-notes/) — the baseline the engine must beat, and how it was taken.
+2. [`result-notes/`](result-notes/) — the baseline the engine must beat, how it was taken, and where the control group's own ceiling is.
 3. [`client-bench/doc/INDEX.md`](client-bench/doc/INDEX.md) — the instrument's code map: what each unit owns and what it gets wrong.
 4. [`engine-uring/doc/00-overview.md`](engine-uring/doc/00-overview.md) — the engine's layered design, then [`10-realtime-server-architecture.md`](server-uring/doc/10-realtime-server-architecture.md) for the runtime shape.
 

@@ -551,6 +551,36 @@ bool report(const config& cfg, const traffic_stats& st)
         return false;
     }
 
+    // Connection loss is checked next, for the same reason fan-out is checked
+    // at all: a connection that dies mid-run stops offering load, so the load
+    // actually offered is neither the requested one nor even a constant.
+    //
+    // This was an advisory line until 2026-09-01, and the 2026-08-30 lesson
+    // repeated itself exactly: a run that lost 1,984 of 10,008 connections and
+    // delivered 81% of what was offered printed lost_conns=1984 and then
+    // "[ OK ] ... no node was the bottleneck". True as written — the client was
+    // fine — and read as an endorsement of a number that describes a server
+    // shedding a fifth of its clients. Printing a fact nothing acts on is how
+    // the fan-out defect survived two sweeps.
+    //
+    // The usual cause is the server: server-epoll closes a connection whose
+    // send buffer passes k_send_cap (256 KiB), which is its slow-reader
+    // defence doing its job under a load it cannot serve. Every clean rung of
+    // both payload ladders measured exactly zero, so the band below is
+    // margin, not tuning.
+    if (cfg.conns > 0 && st.lost_conns >
+                             static_cast<int>(0.005 * cfg.conns)) {
+        std::printf("[VOID] %d of %d connections died during the run (%.1f%%) "
+                    "— the offered load fell while it was being measured, so "
+                    "the throughput above is an average over a load nobody "
+                    "chose. Check the server for connection closes (for "
+                    "server-epoll: \"send buffer over cap\"); if the server is "
+                    "shedding, this rate is past its ceiling.\n",
+                    st.lost_conns, cfg.conns,
+                    100.0 * st.lost_conns / cfg.conns);
+        return false;
+    }
+
     if (st.latency.total == 0) {
         std::printf("[VOID] no latency samples\n");
         return false;
