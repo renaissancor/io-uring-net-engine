@@ -1,0 +1,44 @@
+# Build outputs
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Codegen outputs (regenerated from proto/packets.json on every configure)
+generated/
+
+# IDE / editor
+.idea/
+.vscode/
+.cache/
+.clangd/
+*.swp
+*~
+
+# Compile commands DB
+compile_commands.json
+
+# CMake artifacts in source tree
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Test artifacts
+*.log
+*.core
+core.*
+Testing/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Agent / tooling state (oh-my-claudecode runtime artifacts)
+.omc/
+.claude/

@@ -1,0 +1,54 @@
+---
+# Static analysis configuration for iouring-net-lib.
+# Run with: clang-tidy --quiet path/to/file.cpp -- -std=c++20
+
+Checks: >
+    -*,
+    bugprone-*,
+    cert-*,
+    clang-analyzer-*,
+    concurrency-*,
+    cppcoreguidelines-*,
+    misc-*,
+    modernize-*,
+    performance-*,
+    portability-*,
+    readability-*,
+    -bugprone-easily-swappable-parameters,
+    -cppcoreguidelines-avoid-magic-numbers,
+    -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+    -cppcoreguidelines-pro-type-reinterpret-cast,
+    -cppcoreguidelines-pro-type-vararg,
+    -cppcoreguidelines-non-private-member-variables-in-classes,
+    -modernize-use-trailing-return-type,
+    -readability-magic-numbers,
+    -readability-identifier-length,
+    -misc-non-private-member-variables-in-classes,
+    -misc-include-cleaner
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: '(include|src)/iouring_net/.*\.(h|hpp)$'
+
+CheckOptions:
+    readability-identifier-naming.NamespaceCase: lower_case
+    readability-identifier-naming.ClassCase: lower_case
+    readability-identifier-naming.StructCase: lower_case
+    readability-identifier-naming.FunctionCase: lower_case
+    readability-identifier-naming.VariableCase: lower_case
+    readability-identifier-naming.MemberCase: lower_case
+    readability-identifier-naming.PrivateMemberSuffix: _
+    readability-identifier-naming.ProtectedMemberSuffix: _
+    readability-identifier-naming.ConstantCase: lower_case
+    readability-identifier-naming.EnumCase: lower_case
+    readability-identifier-naming.EnumConstantCase: lower_case
+    readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+    readability-identifier-naming.TemplateParameterCase: CamelCase
+
+    cppcoreguidelines-avoid-do-while.IgnoreMacros: true
+    modernize-use-default-member-init.UseAssignment: true
+    performance-move-const-arg.CheckTriviallyCopyableMove: false
+
+    # Permit `xnew<T>()` / `xdelete()` style helpers
+    cppcoreguidelines-owning-memory.LegacyResourceProducers: '::iouring_net::mem::xnew;::iouring_net::mem::alloc'
+    cppcoreguidelines-owning-memory.LegacyResourceConsumers: '::iouring_net::mem::xdelete;::iouring_net::mem::release'
