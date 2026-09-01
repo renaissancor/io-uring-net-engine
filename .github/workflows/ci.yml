@@ -62,6 +62,48 @@ jobs:
       - name: Test server-uring
         run: ctest --test-dir build/server --output-on-failure
 
+  # Concurrency gate. ASan and UBSan cannot see ordering bugs, and the SPSC
+  # acquire/release cursors under sds::pipe are the load-bearing claim of the
+  # whole thread mesh — so the same install-prefix round trip runs again with
+  # ThreadSanitizer. ASan and TSan cannot link into one binary, which is why
+  # this is a second job rather than a flag on the first.
+  #
+  # setarch -R is not optional: TSan fixes its address-space layout at link
+  # time, and ubuntu-24.04 ships vm.mmap_rnd_bits=32, so every test aborts with
+  # "unexpected memory mapping" without it. See
+  # engine-uring/doc/08-test-strategy.md § "TSan on Ubuntu 24.04".
+  concurrency-tsan:
+    runs-on: ubuntu-24.04
+    env:
+      TSAN_CXX_FLAGS: -fsanitize=thread -fno-omit-frame-pointer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo bash engine-uring/scripts/setup.sh
+      - name: Configure engine (RelWithDebInfo + TSan)
+        run: >
+          cmake -S engine-uring -B build/engine-tsan -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_FLAGS="$TSAN_CXX_FLAGS"
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
+      - name: Build engine
+        run: cmake --build build/engine-tsan
+      - name: Test engine under TSan
+        run: setarch "$(uname -m)" -R ctest --test-dir build/engine-tsan --output-on-failure
+      - name: Install engine to prefix
+        run: cmake --install build/engine-tsan --prefix "$PWD/prefix-tsan"
+      - name: Configure server-uring against the prefix
+        run: >
+          cmake -S server-uring -B build/server-tsan -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_FLAGS="$TSAN_CXX_FLAGS"
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
+          -DCMAKE_PREFIX_PATH="$PWD/prefix-tsan"
+      - name: Build server-uring
+        run: cmake --build build/server-tsan
+      - name: Test server-uring under TSan
+        run: setarch "$(uname -m)" -R ctest --test-dir build/server-tsan --output-on-failure
+
   # The control group and the instrument build with plain make.
   epoll-and-bench:
     runs-on: ubuntu-24.04

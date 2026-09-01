@@ -14,6 +14,8 @@
 #include "mesh.h"
 #include "message.h"
 
+#include "runtime/thread.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstring>
@@ -212,4 +214,110 @@ TEST_CASE("mesh: two frames in flight across the wrap keep FIFO order",
 
         REQUIRE(p.is_empty());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-thread torture
+// ---------------------------------------------------------------------------
+//
+// Everything above alternates a single thread between the two roles, which is
+// a legal spsc use but proves nothing about ORDERING. mesh frame atomicity
+// rests entirely on ring_buffer::enqueue2 publishing the producer cursor once,
+// after both the header and the body regions have landed. That claim is
+// load-bearing for the whole mesh, and until this case it had no cross-thread
+// test at all: sds/ring_buffer_test.cpp's 1M-frame stress exercises the
+// single-region enqueue only.
+//
+// The pipe is deliberately tiny — a few frames of headroom — so the producer
+// hits a full pipe constantly and every frame lands at a different offset.
+// Bodies straddle the wrap in every possible position over a run this long.
+//
+// What a failure looks like: if the cursor were published before the body
+// bytes were visible, a consumer would read a header whose body is still the
+// previous frame's — caught here as a payload mismatch, and caught by TSan as
+// the race it is. Run it under `make test PRESET=tsan`; CI does.
+
+namespace {
+
+// Bodies are self-describing: every byte is derived from the sequence number,
+// so a torn frame is a content mismatch rather than a silent pass.
+constexpr u32 k_torture_frames = 200'000;
+
+u16 torture_body_len(u32 seq) noexcept {
+    // 1..64 bytes, coprime stride so the length cycle does not line up with
+    // the pipe size and the wrap point walks the whole frame.
+    return static_cast<u16>(1 + (seq * 7) % 64);
+}
+
+byte torture_byte(u32 seq, u16 i) noexcept {
+    return static_cast<byte>((seq * 31u + i * 17u) & 0xFF);
+}
+
+app_msg_type torture_type(u32 seq) noexcept {
+    return (seq & 1) ? app_msg_type::session_closed : app_msg_type::adopt_session;
+}
+
+using torture_pipe = sds::pipe<256>;
+
+struct torture_ctx {
+    torture_pipe pipe;
+};
+
+void* torture_producer(void* arg) noexcept {
+    auto* ctx = static_cast<torture_ctx*>(arg);
+    for (u32 seq = 0; seq < k_torture_frames; ++seq) {
+        const u16 len = torture_body_len(seq);
+        byte      body[64];
+        for (u16 i = 0; i < len; ++i) body[i] = torture_byte(seq, i);
+
+        // Spin on backpressure — mesh_post writes nothing when the whole
+        // frame does not fit, so a retry is not a partial re-send.
+        while (!app::mesh_post(ctx->pipe, torture_type(seq), body, len)) {
+            lnx::this_thread::yield();
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("mesh: enqueue2 frames survive a real producer thread intact",
+          "[app][mesh][stress]") {
+    // 256 B of pipe on the stack; the frames are at most 68 B, so at most
+    // three are ever in flight and the producer blocks nearly every write.
+    torture_ctx ctx{};
+
+    lnx::thread producer{&torture_producer, &ctx};
+
+    u32 seq = 0;
+    while (seq < k_torture_frames) {
+        app_msg_header hdr{};
+        byte           body[app::k_mesh_body_max];
+        if (!app::mesh_try_recv(ctx.pipe, hdr, body, sizeof body)) {
+            lnx::this_thread::yield();
+            continue;
+        }
+
+        const u16 want_len = torture_body_len(seq);
+
+        // REQUIRE per frame would be 200k assertions through Catch2's
+        // machinery; compare first and only report on mismatch so the run
+        // stays a stress test rather than a benchmark of the test harness.
+        bool ok = hdr.size == want_len
+               && hdr.type == static_cast<u16>(torture_type(seq));
+        for (u16 i = 0; ok && i < want_len; ++i) {
+            ok = body[i] == torture_byte(seq, i);
+        }
+        if (!ok) {
+            producer.join();
+            INFO("frame " << seq << ": size=" << hdr.size << " want " << want_len
+                          << ", type=" << hdr.type);
+            REQUIRE(ok);
+        }
+        ++seq;
+    }
+
+    producer.join();
+    REQUIRE(seq == k_torture_frames);
+    REQUIRE(ctx.pipe.is_empty());
 }

@@ -358,6 +358,26 @@ throw `std::bad_alloc`. Every owning std:: container internally calls
 no-exceptions floor. Sync-primitive scope was decided 2026-05-15
 (commit `73098157`); extended project-wide 2026-05-19.
 
+### Tests are exempt, on purpose
+
+The table above governs shipped code. Test code may use anything in
+`std::`, and the reason is not convenience — **the STL is the oracle.**
+`sds::ring_buffer` is checked against a `std::deque` reference model,
+`sds::cstr_hash_map` against `std::unordered_map`. A property test whose
+oracle is written with the same primitive it is testing proves that the
+primitive agrees with itself.
+
+The same licence covers the harness: `std::thread` and `std::atomic` are
+fine for driving a concurrency test, including one whose subject is
+`lnx::thread` or `lnx::atomic_*`. Anything that is part of the *claim*
+under test must of course be the project's own.
+
+This was left undecided by
+[`../../design-notes/2026-08-21-architecture-review.md`](../../design-notes/2026-08-21-architecture-review.md)
+item 6, which noticed `tests/sds/ring_buffer_test.cpp` using `std::thread`
+while `tests/runtime/thread_test.cpp` uses `lnx::thread`. Both are correct
+under this rule, and neither needs changing.
+
 ---
 
 ## What this project does NOT do

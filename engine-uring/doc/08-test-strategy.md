@@ -163,12 +163,14 @@ within the same build).
 |-----------|---------------------------------------|--------------------------------|
 | ASan      | Every PR (floor job, gcc-12)          | Default for unit + integration |
 | UBSan     | Bundled with ASan                     | Free with `-fsanitize=address,undefined` |
-| TSan      | Planned (separate job, lands with reactor) | Concurrency tests only      |
+| TSan      | Every PR (`concurrency-tsan` job)     | Engine + server-uring, via `setarch -R` |
 | MSan      | Manual / opt-in                       | Useful for the codec path; libc++ rebuild required, defer |
 | Valgrind  | Manual                                | Slow; ASan covers the common cases |
 
 ASan and TSan are mutually exclusive (cannot link the same binary with
-both). Run two CI jobs.
+both), which is why the root workflow runs `engine-and-server` and
+`concurrency-tsan` as two jobs over the same install-prefix round trip
+rather than one job with more flags.
 
 For ptrace/sandboxed environments where LeakSanitizer cannot attach,
 `ctest --preset default` already sets `LSAN_OPTIONS=detect_leaks=0`.
