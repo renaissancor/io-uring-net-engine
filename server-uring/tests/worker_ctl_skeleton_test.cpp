@@ -18,6 +18,7 @@
 // its own scope, so they never need distinct ids.
 
 #include "config.h"
+#include "mesh.h"
 #include "thread_ctl.h"
 #include "worker_ctl.h"
 #include "runtime/thread.h"
@@ -26,6 +27,16 @@
 #include <catch2/catch_test_macros.hpp>
 
 namespace {
+
+// worker_ctl::start() traps on an unwired mesh edge. These cases exercise
+// lifecycle only and never post a frame, but the wiring is part of the
+// start() contract rather than of the traffic, so every case supplies it.
+// 80 KiB of locals per case, which the default 8 MiB stack absorbs; no
+// std:: container is reached for, matching the rest of these tests.
+struct mesh_edges {
+    app::acceptor_to_worker_pipe in{};
+    app::worker_to_acceptor_pipe out{};
+};
 
 void spin_until_running(app::worker_ctl& w) noexcept {
     while (!w.is_running()) {
@@ -55,7 +66,9 @@ void spin_until_kernel_tid(app::worker_ctl& w) noexcept {
 TEST_CASE("app: worker_ctl spawns, runs, drains, stops clean",
           "[app][skeleton][worker_ctl]") {
     app::config        cfg{};
+    mesh_edges      edges{};
     app::worker_ctl w{0, cfg};
+    w.install_pipes(&edges.in, &edges.out);
 
     REQUIRE(w.id() == 0);
     REQUIRE(w.is_starting());     // ctor default = starting; running is published by trampoline
@@ -83,7 +96,9 @@ TEST_CASE("app: worker_ctl spawns, runs, drains, stops clean",
 TEST_CASE("app: worker_ctl::request_stop is idempotent",
           "[app][skeleton][worker_ctl]") {
     app::config        cfg{};
+    mesh_edges      edges{};
     app::worker_ctl w{0, cfg};
+    w.install_pipes(&edges.in, &edges.out);
 
     w.start();
     spin_until_running(w);
@@ -108,7 +123,9 @@ TEST_CASE("app: request_stop on starting ctl transitions to draining; worker sho
     // a stop and spins forever. The fix handles starting→draining as a
     // valid transition.
     app::config        cfg{};
+    mesh_edges      edges{};
     app::worker_ctl w{0, cfg};
+    w.install_pipes(&edges.in, &edges.out);
 
     REQUIRE(w.is_starting());
 

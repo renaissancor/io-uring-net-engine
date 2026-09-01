@@ -35,7 +35,8 @@ struct acceptor_ctl {
     // pipe it writes toward worker i, `in[i]` the close-notify pipe it reads
     // back from worker i. Array-reference parameters so the roster size is
     // checked at the call site; must be called BEFORE start(), so the engine
-    // sees non-null edges on its first tick.
+    // sees non-null edges on its first tick. start() checks every edge — a
+    // partially-wired hub is a silent race, not a crash.
     void install_pipes(acceptor_to_worker_pipe (&out)[roster::k_worker_count],
                        worker_to_acceptor_pipe (&in)[roster::k_worker_count]) noexcept {
         for (i32 i = 0; i < roster::k_worker_count; ++i) {

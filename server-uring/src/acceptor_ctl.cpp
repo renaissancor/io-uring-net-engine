@@ -18,6 +18,16 @@ acceptor_ctl::acceptor_ctl(const config& cfg) noexcept
 }
 
 void acceptor_ctl::start() noexcept {
+    // install_pipes() must have run for EVERY edge — the acceptor is the hub,
+    // so a partially-wired roster is reachable in a way the worker's single
+    // pair is not. Same reasoning as worker_ctl::start(): the edges reach the
+    // spawned thread through pthread_create's happens-before, so wiring one
+    // late is a silent race, not a crash.
+    for (i32 i = 0; i < roster::k_worker_count; ++i) {
+        LNX_CHECK(_to_worker[i]   != nullptr);
+        LNX_CHECK(_from_worker[i] != nullptr);
+    }
+
     // Move-assigns a freshly-constructed lnx::thread into base._thread.
     // lnx::thread's move-assign LNX_CHECKs the destination is not already
     // joinable — "no double-start" for free.

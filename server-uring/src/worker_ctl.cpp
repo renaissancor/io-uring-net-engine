@@ -26,6 +26,15 @@ worker_ctl::worker_ctl(i32 id, const config& cfg) noexcept
 }
 
 void worker_ctl::start() noexcept {
+    // install_pipes() must have run. Its "call me BEFORE start()" was a
+    // comment only, and the cost of ignoring it is not a crash: the edges
+    // publish to the new thread via pthread_create's happens-before, so a
+    // late install_pipes() is a silent data race that reads null or torn on
+    // the worker's first tick. worker_engine::attach() already traps on
+    // null; this is the same rule one layer out, where the mistake is made.
+    LNX_CHECK(_from_acceptor != nullptr);
+    LNX_CHECK(_to_acceptor   != nullptr);
+
     // Move-assigns a freshly-constructed lnx::thread into base._thread.
     // lnx::thread's move-assign LNX_CHECKs that the destination is not
     // already joinable — gives us "no double-start" for free.

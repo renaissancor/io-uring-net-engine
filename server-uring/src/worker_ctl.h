@@ -32,7 +32,8 @@ struct worker_ctl {
     // Install the mesh edges the supervisor (LANDLORD) owns. `in` is the
     // acceptor->worker admission pipe this worker reads; `out` is the
     // worker->acceptor close-notify pipe it writes. Must be called BEFORE
-    // start() so the engine sees non-null edges on its first tick.
+    // start() so the engine sees non-null edges on its first tick — checked
+    // there, because skipping it is a silent race rather than a crash.
     void install_pipes(acceptor_to_worker_pipe* in,
                        worker_to_acceptor_pipe* out) noexcept {
         _from_acceptor = in;

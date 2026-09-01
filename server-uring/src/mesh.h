@@ -30,6 +30,7 @@
 // bound: the largest body in the mesh vocabulary, used to size receive
 // buffers. Raise it when a new message body approaches it.
 
+#include "config.h"
 #include "message.h"
 #include "check.h"
 #include "sds/pipe.h"
@@ -106,5 +107,27 @@ bool mesh_try_recv(Pipe& p, app_msg_header& hdr_out, byte* body_out, usize body_
 // worker->acceptor close-notify edge is lighter.
 using acceptor_to_worker_pipe = sds::pipe<64 * 1024>;
 using worker_to_acceptor_pipe = sds::pipe<16 * 1024>;
+
+// The admission edge may drop: mesh_post() returning false means the acceptor
+// closes the fd and never mints the session. The close-notify edge may NOT.
+// A dropped session_closed leaks its authority-map entry for the life of the
+// process, and a worker cannot block waiting for room.
+//
+// What makes it undroppable is a protocol rule, not a bigger pipe: a worker
+// posts EXACTLY ONE session_closed per adopted session, and the slot cannot be
+// reused until the acceptor has consumed that close (the generation field in
+// session_closed_msg is what lets the acceptor discard a stale one). So the
+// worst case in flight on one edge is every session closing at once, and that
+// worst case has to fit.
+//
+// It fits today — 256 x 28 B = 7 KiB into 16 KiB — but until this assert it
+// fit by coincidence. Shrinking the pipe or raising k_session_capacity would
+// have compiled fine and leaked under load.
+static_assert(config::k_session_capacity
+                      * mesh_frame_size(sizeof(session_closed_msg))
+                  <= worker_to_acceptor_pipe::capacity(),
+              "close-notify must never drop: one in-flight close per session "
+              "must fit the worker->acceptor pipe. Raise the pipe, or lower "
+              "config::k_session_capacity.");
 
 }  // namespace app
