@@ -369,5 +369,5 @@ crashes the test, which is the desired behavior.
   spec in implementation detail
 - [`wiki/runtime/integration.md`](../wiki/runtime/integration.md) —
   how the product wires into the library at the CMake / link level
-- [`iouring-net-lib/docs/00-overview.md`](../../iouring-net-lib/docs/00-overview.md)
+- [`iouring-net-lib/docs/00-overview.md`](../../../engine-uring/doc/00-overview.md)
   — the library architecture this sits on

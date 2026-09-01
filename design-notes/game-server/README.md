@@ -1,11 +1,34 @@
-# `iouring-net-server` — reference product on top of `iouring-net-lib`
+# Game server — imported design body
+
+> **Provenance.** These 18 documents came from `iouring-net-server`, a separate
+> repository created by the two-repo split that
+> [`../2026-05-14-project-split.md`](../2026-05-14-project-split.md) argued for
+> and that was later rejected. The repository is gone; its history is grafted
+> into this one and its design survives here unedited.
+>
+> **Names in the text below are the names of the time.** `iouring-net-lib` is
+> today's [`../../engine-uring/`](../../engine-uring/); `iouring-net-server` is
+> the product this set describes, which was never built — today's
+> [`../../server-uring/`](../../server-uring/) is a chat server written against
+> the current engine, not this design. Link *targets* have been repointed at
+> the monorepo so they resolve; link *text* was left alone. Two targets have no
+> equivalent here at all (`wiki/network/packet_framing.md`,
+> `packet_handler.md` — library pages that never landed) and now point at
+> [`../../engine-uring/doc/network/`](../../engine-uring/doc/network/).
+>
+> **The v0 scaffold is not here.** `server/`, `tests/`, and the CMake presets
+> were dropped on import: their claim — that a product builds against the
+> installed library through `find_package` — is proven in this repo by the
+> `engine-uring` hello example and the install-prefix boundary gate in CI.
+
+## What this was
 
 A game-server-style product built on the `iouring-net-lib` Linux io_uring
 network library. This is the **product** half of the two-repo portfolio
 split documented in
-[`iouring-net-lib/docs/09-project-split.md`](../iouring-net-lib/docs/09-project-split.md);
-the library is consumed via `find_package(iouring_net)`, never via
-relative `#include` into its source tree.
+[`../2026-05-14-project-split.md`](../2026-05-14-project-split.md). The
+library is consumed via `find_package(iouring_net)`, never via relative
+`#include` into its source tree.
 
 ## Status
 
@@ -63,7 +86,7 @@ make run         # build and run the server (--dry-run)
 Identical to the library — C++20 locked, gcc 12+ / clang 14+, Ubuntu
 22.04+ / Debian 12+ / RHEL 9+, kernel 5.19+ recommended. WSL2 is fine
 for development. See
-[`iouring-net-lib/docs/02-build-and-toolchain.md`](../iouring-net-lib/docs/02-build-and-toolchain.md)
+[`iouring-net-lib/docs/02-build-and-toolchain.md`](../../engine-uring/doc/02-build-and-toolchain.md)
 for the authoritative version matrix; this repo's
 [`docs/02-build-and-toolchain.md`](docs/02-build-and-toolchain.md)
 records the product-specific additions (Python 3.10+ for codegen).

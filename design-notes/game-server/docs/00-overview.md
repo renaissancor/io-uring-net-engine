@@ -10,7 +10,7 @@
 Entry point for the `iouring-net-server` design. Defines mission,
 scope, the application-layer architecture map, design tenets, and a
 glossary. Read alongside
-[`iouring-net-lib/docs/00-overview.md`](../../iouring-net-lib/docs/00-overview.md);
+[`iouring-net-lib/docs/00-overview.md`](../../../engine-uring/doc/00-overview.md);
 that document defines the layered map below the Application line, this
 one defines what sits on top.
 
@@ -82,7 +82,7 @@ The dotted line between "Generated stub layer" and "Concrete
 hand-writes per packet. Adding a new packet is a single edit to
 `proto/packets.json` plus implementing one free-function handler.
 The dispatcher (`packet_dispatcher`) is **product-side**, not in
-the library — see [`../../iouring-net-lib/wiki/network/packet_handler.md`](../../iouring-net-lib/wiki/network/packet_handler.md)
+the library — see [`../../iouring-net-lib/wiki/network/packet_handler.md`](../../../engine-uring/doc/network/)
 for the rationale.
 
 ---
@@ -201,13 +201,13 @@ for the rationale.
   REQUIRED)` against a library install prefix. Never via git
   submodule, never via relative `#include` into the library's source.
 - **What the library owns.** Layers 1–3 from
-  [`iouring-net-lib/docs/00-overview.md`](../../iouring-net-lib/docs/00-overview.md):
+  [`iouring-net-lib/docs/00-overview.md`](../../../engine-uring/doc/00-overview.md):
   Primitive (memory pool, ring buffer, sync, diagnostics), Runtime
   (reactor, task<T>, job_queue), Network (service, listener,
   session, session_handle, packet_framing). **The library does NOT
   own a packet dispatcher or a codec template** — those were
   initially placed library-side but pulled into the product. See
-  [`../../iouring-net-lib/wiki/network/packet_handler.md`](../../iouring-net-lib/wiki/network/packet_handler.md)
+  [`../../iouring-net-lib/wiki/network/packet_handler.md`](../../../engine-uring/doc/network/)
   for the deferral rationale.
 - **What this repo owns.** Layer 4 (Application): the entire
   dispatcher (`packet_dispatcher`), generated stubs, concrete

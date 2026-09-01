@@ -31,7 +31,7 @@ library doc for shared content.
 ## Cross-repo references
 
 The library's authoritative docs that this repo depends on:
-- [`iouring-net-lib/docs/00-overview.md`](../../iouring-net-lib/docs/00-overview.md) — layered subsystem map
-- [`iouring-net-lib/docs/02-build-and-toolchain.md`](../../iouring-net-lib/docs/02-build-and-toolchain.md) — toolchain floor
-- [`iouring-net-lib/docs/09-project-split.md`](../../iouring-net-lib/docs/09-project-split.md) — the boundary that defines what lives where
-- [`iouring-net-lib/wiki/network/packet_framing.md`](../../iouring-net-lib/wiki/network/packet_framing.md) — the framing primitive this product consumes (when it lands)
+- [`iouring-net-lib/docs/00-overview.md`](../../../engine-uring/doc/00-overview.md) — layered subsystem map
+- [`iouring-net-lib/docs/02-build-and-toolchain.md`](../../../engine-uring/doc/02-build-and-toolchain.md) — toolchain floor
+- [`iouring-net-lib/docs/09-project-split.md`](../../2026-05-14-project-split.md) — the boundary that defines what lives where
+- [`iouring-net-lib/wiki/network/packet_framing.md`](../../../engine-uring/doc/network/) — the framing primitive this product consumes (when it lands)

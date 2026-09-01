@@ -4,7 +4,7 @@ The product inherits every toolchain decision from the library
 verbatim. This document records **only the additions** specific to
 the product. For the language-standard / kernel / dependency floor,
 read
-[`iouring-net-lib/docs/02-build-and-toolchain.md`](../../iouring-net-lib/docs/02-build-and-toolchain.md)
+[`iouring-net-lib/docs/02-build-and-toolchain.md`](../../../engine-uring/doc/02-build-and-toolchain.md)
 first — what follows assumes that as the baseline.
 
 ---
@@ -92,7 +92,7 @@ RUN git clone --depth 1 --branch ${IOURING_NET_LIB_TAG} \
 
 The library tag is pinned, not floated — same logic as the
 reproducibility envelope in the library's
-[`07-ci-and-reproducibility.md`](../../iouring-net-lib/docs/07-ci-and-reproducibility.md).
+[`07-ci-and-reproducibility.md`](../../../engine-uring/doc/07-ci-and-reproducibility.md).
 
 ### 4. liburing — transitive only
 
@@ -149,7 +149,7 @@ satisfy.
 
 ## Cross-references
 
-- [`iouring-net-lib/docs/02-build-and-toolchain.md`](../../iouring-net-lib/docs/02-build-and-toolchain.md)
+- [`iouring-net-lib/docs/02-build-and-toolchain.md`](../../../engine-uring/doc/02-build-and-toolchain.md)
   — authoritative toolchain matrix.
 - [`03-cmake.md`](03-cmake.md) — how `find_package` and the codegen
   step are wired into CMake.

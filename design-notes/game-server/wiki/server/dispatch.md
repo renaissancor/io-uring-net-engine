@@ -248,7 +248,7 @@ coroutine. There is **no third path**: handler-internal failures
 at least `bad_payload_size` and `unknown_packet_id` entries. As of
 2026-05-14 neither symbol exists in `iouring-net-lib`; landing the
 network layer is a prerequisite for this dispatcher's reject paths.
-See [`../../../iouring-net-lib/wiki/network/packet_framing.md`](../../../iouring-net-lib/wiki/network/packet_framing.md)
+See [`../../../iouring-net-lib/wiki/network/packet_framing.md`](../../../../engine-uring/doc/network/)
 for the framing-layer error catalogue (when it lands).
 
 ## Reference origin

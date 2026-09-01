@@ -44,7 +44,7 @@ quietly restate its own results.
 
 Code map with reading order, what each unit owns and what it fails on:
 [`doc/INDEX.md`](doc/INDEX.md). Dated findings that outlive the numbers:
-[`design/`](design/).
+[`../result-notes/`](../result-notes/).
 
 ```
 src/wire.*        frame header, the study/iouring seam, blob layout
@@ -64,7 +64,6 @@ merge.py          add raw histograms; percentiles cannot be averaged
 chatcli.py        the judge: content correctness, not throughput
 
 doc/INDEX.md      code map: what each unit owns and breaks on
-design/           dated findings; the traps outlive the numbers
 ```
 
 ## Build and run
@@ -192,7 +191,7 @@ numbers describe the sanitiser.
 `interactive` is not decoration — it is the only mode a human drives, and the
 first time one did, it crashed. Two defects that no synthetic mode could
 reach are recorded in
-[`design/2026-08-17-interactive-client-defects.md`](design/2026-08-17-interactive-client-defects.md):
+[`../result-notes/2026-08-17-interactive-client-defects.md`](../result-notes/2026-08-17-interactive-client-defects.md):
 stdin is a byte stream and an IME can split a UTF-8 character across reads,
 and the server's payload cap applies to `"nick: " + text` so the real limit is
 per-user and has two invisible cliffs.

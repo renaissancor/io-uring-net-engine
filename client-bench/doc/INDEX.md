@@ -68,7 +68,7 @@ a run that dies in one tells you nothing about the other.
 | method, current numbers, operating rules | `README.md` |
 | what each unit owns and breaks on | this file |
 | non-obvious *local* decisions | inline, next to the code — ~22% of lines |
-| dated findings that outlive the numbers | `design/` |
+| dated findings that outlive the numbers | [`../../result-notes/`](../../result-notes/) |
 | the decision behind a specific change | the commit that made it (trailers: `Constraint:`, `Rejected:`, `Directive:`) |
 
 Inline comments are the default and should stay that way. A decision that only
@@ -76,9 +76,9 @@ makes sense while looking at the surrounding ten lines belongs in those ten
 lines; moving it to a doc file guarantees it goes stale, because nobody edits
 the doc when they edit the code.
 
-`design/` is for the opposite case: findings whose value survives the code
+[`../../result-notes/`](../../result-notes/) is for the opposite case: findings whose value survives the code
 being deleted.
-[`2026-08-17-three-instrument-defects.md`](../design/2026-08-17-three-instrument-defects.md)
+[`2026-08-17-three-instrument-defects.md`](../../result-notes/2026-08-17-three-instrument-defects.md)
 is the worked example. The baseline table in the README will be rewritten the
 day the io_uring server lands; the three traps in that file will still be true.
 [`2026-08-30-what-limits-the-server.md`](../../result-notes/2026-08-30-what-limits-the-server.md)

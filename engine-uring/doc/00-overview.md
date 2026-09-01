@@ -65,7 +65,7 @@ reserved and not yet written; it will consume this library through
 `find_package(iouring_net)` against an install prefix, never through a
 relative include. That boundary is the point and survives the two
 projects sharing one repo. See
-[`09-project-split.md`](../../design-notes/09-project-split.md) for the full
+[`2026-05-14-project-split.md`](../../design-notes/2026-05-14-project-split.md) for the full
 library/product architecture, boundary criteria, and the seam that
 connects the two projects.
 

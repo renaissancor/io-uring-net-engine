@@ -49,7 +49,7 @@ a worker-count sweep stays cheap to benchmark (see `src/roster.h`).
 
 ## What the design docs say, and how much of it survives
 
-[`../design-notes/09-project-split.md`](../design-notes/09-project-split.md)
+[`../design-notes/2026-05-14-project-split.md`](../design-notes/2026-05-14-project-split.md)
 specifies the boundary criteria, what belongs on each side, and the contract
 surface. Read it for the boundary. Ignore its repo topology: it argued for a
 separate repository, that argument was rejected, and the banner at the top of

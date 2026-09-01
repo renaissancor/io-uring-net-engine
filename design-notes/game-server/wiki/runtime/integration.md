@@ -71,7 +71,7 @@ lock across `co_await`.
 `close_reason` enum are required by this product but **not yet
 implemented** in `iouring-net-lib`. They are prerequisites for the
 network-layer milestone (see
-[`../../../iouring-net-lib/docs/09-project-split.md`](../../../iouring-net-lib/docs/09-project-split.md)
+[`../../../iouring-net-lib/docs/09-project-split.md`](../../../2026-05-14-project-split.md)
 § "When to split"). The product cannot build until they land.
 
 ## Build seam
@@ -237,6 +237,6 @@ changes between the time the dev pulls and the time CI runs.
   consumer of these library types.
 - [`../client/main.md`](../client/main.md) — client-side consumer
   (smaller subset of library surface).
-- [`../../../iouring-net-lib/docs/09-project-split.md`](../../../iouring-net-lib/docs/09-project-split.md)
+- [`../../../iouring-net-lib/docs/09-project-split.md`](../../../2026-05-14-project-split.md)
   — the architectural constraint that defines what's allowed to cross
   this seam.

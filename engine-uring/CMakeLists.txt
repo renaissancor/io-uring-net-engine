@@ -77,7 +77,7 @@ iouring_net_apply_warnings(iouring_net)
 # file-set above ship to the install prefix; any other header in src/ is
 # automatically private. New public surface is added by amending the
 # FILE_SET FILES list (one line per header), making boundary changes
-# reviewable line-by-line. Referenced by design-notes/09-project-split.md §
+# reviewable line-by-line. Referenced by design-notes/2026-05-14-project-split.md §
 # "The contract surface" and server-uring/docs/07-ci.md §
 # "Boundary enforcement".
 install(TARGETS iouring_net

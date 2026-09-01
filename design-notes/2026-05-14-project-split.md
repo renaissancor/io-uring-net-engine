@@ -123,7 +123,7 @@ Layers 1–3 from `00-overview.md` — Primitive, Runtime, Network.
 | `reactor` (io_uring)                           | Runtime    | The io_uring abstraction itself               |
 | `job_queue`, `thread_context`                  | Runtime    | Generic scheduling primitive                  |
 | `service`, `listener`, `session`               | Network    | Generic TCP server building blocks            |
-| `packet_framing` (size/id header parser)       | Network    | The `[uint16 size][uint16 id]` codec — generic. **This is the entire Network-layer surface the library v1 ships for packets.** No dispatcher base class, no codec template, no unhandled-id policy. See [`../doc/network/packet_handler.md`](../doc/network/packet_handler.md) for why the dispatcher is product-side. |
+| `packet_framing` (size/id header parser)       | Network    | The `[uint16 size][uint16 id]` codec — generic. **This is the entire Network-layer surface the library v1 ships for packets.** No dispatcher base class, no codec template, no unhandled-id policy. See [`../doc/network/packet_handler.md`](../engine-uring/doc/network/) for why the dispatcher is product-side. |
 
 ### Product side (`iouring-net-server`)
 
@@ -135,7 +135,7 @@ to one wire protocol.
 | `proto/packets.json`                           | Wire schema for this product's RPCs                |
 | `codegen/rpc_gen.py` / `stub_gen.py` / `proxy_gen.py` | Pre-build code generation; mirrors `SelectServer/TestSerialize/` pipeline |
 | `generated/*.h`, `generated/*.cpp`             | Build artifacts; gitignored                        |
-| `packet_dispatcher` + concrete handlers        | The product owns the dispatcher (`server/dispatch.{h,cpp}`) and the per-packet `handle_X` free-function handlers (`server/handlers/*.cpp`). See [`../../iouring-net-server/wiki/server/dispatch.md`](../../iouring-net-server/wiki/server/dispatch.md) and [`handlers.md`](../../iouring-net-server/wiki/server/handlers.md). |
+| `packet_dispatcher` + concrete handlers        | The product owns the dispatcher (`server/dispatch.{h,cpp}`) and the per-packet `handle_X` free-function handlers (`server/handlers/*.cpp`). See [`../../iouring-net-server/wiki/server/dispatch.md`](game-server/wiki/server/dispatch.md) and [`handlers.md`](game-server/wiki/server/handlers.md). |
 | `server/main.cpp`                              | Server entry point                                 |
 | `client/main.cpp`                              | Echo/test client                                   |
 | Integration & E2E tests                        | Two-process tests, traffic replay, fuzz harnesses  |
@@ -293,12 +293,12 @@ The **physical repo split** (code, CMake, tests) is a plan, not a
 been written ahead of the code, following the same doc-first
 methodology that bootstrapped this library — they live at
 `~/CLionProjects/iouring-net-server/` as of 2026-05-14. See that
-directory's [`README.md`](../../iouring-net-server/README.md) and
+directory's [`README.md`](game-server/README.md) and
 `doc/` tree; in particular
-[`iouring-net-server/docs/00-overview.md`](../../iouring-net-server/docs/00-overview.md)
-and [`01-architecture.md`](../../iouring-net-server/docs/01-architecture.md)
+[`iouring-net-server/docs/00-overview.md`](game-server/docs/00-overview.md)
+and [`01-architecture.md`](game-server/docs/01-architecture.md)
 specify the product-side architecture, and
-[`doc/05-codegen.md`](../../iouring-net-server/docs/05-codegen.md)
+[`doc/05-codegen.md`](game-server/docs/05-codegen.md)
 specifies the codegen pipeline.
 
 Code lands per this sequence:

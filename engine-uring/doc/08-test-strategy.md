@@ -77,7 +77,7 @@ test suite. They run on demand.
 ### Realtime-server architecture tests
 
 Tied to the three-thread milestone (see
-[`10-realtime-server-architecture.md`](10-realtime-server-architecture.md)):
+[`10-realtime-server-architecture.md`](../../server-uring/doc/10-realtime-server-architecture.md)):
 
 - **SessionManager/Worker handoff** — accepted fd becomes worker-owned;
   `S_ENTER_WORLD_OK` emitted only after worker adoption + room join; worker

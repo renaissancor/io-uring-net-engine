@@ -73,7 +73,7 @@ headroom is still a run.
 1. **This file** — the claim.
 2. [`result-notes/`](result-notes/) — the baseline the engine must beat, and how it was taken.
 3. [`client-bench/doc/INDEX.md`](client-bench/doc/INDEX.md) — the instrument's code map: what each unit owns and what it gets wrong.
-4. [`engine-uring/doc/00-overview.md`](engine-uring/doc/00-overview.md) — the engine's layered design, then [`10-realtime-server-architecture.md`](engine-uring/doc/10-realtime-server-architecture.md) for the runtime shape.
+4. [`engine-uring/doc/00-overview.md`](engine-uring/doc/00-overview.md) — the engine's layered design, then [`10-realtime-server-architecture.md`](server-uring/doc/10-realtime-server-architecture.md) for the runtime shape.
 
 ## Status
 

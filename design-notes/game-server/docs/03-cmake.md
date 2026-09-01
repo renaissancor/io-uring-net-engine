@@ -4,7 +4,7 @@ Build-system conventions for `iouring-net-server`. Two product-specific
 concerns that the library does not face: **consuming an installed
 library via `find_package`** and **wiring a pre-build codegen step**.
 Everything else (warnings, presets, sanitizer matrix) mirrors the
-library; see [`iouring-net-lib/docs/05-cmake.md`](../../iouring-net-lib/docs/05-cmake.md).
+library; see [`iouring-net-lib/docs/05-cmake.md`](../../../engine-uring/doc/05-cmake.md).
 
 ---
 
@@ -49,7 +49,7 @@ endif()
 ```
 
 The structure mirrors the library's top-level CMakeLists at
-[`iouring-net-lib/CMakeLists.txt`](../../iouring-net-lib/CMakeLists.txt)
+[`iouring-net-lib/CMakeLists.txt`](../../../engine-uring/CMakeLists.txt)
 intentionally — a contributor moving between the two repos finds the
 same layout.
 
@@ -378,8 +378,8 @@ repos cohere on the lowest supported toolchain.
   install-prefix prerequisites for the snippets above.
 - [`05-codegen.md`](05-codegen.md) — what the Python scripts emit, and
   how to extend the schema.
-- [`iouring-net-lib/docs/05-cmake.md`](../../iouring-net-lib/docs/05-cmake.md)
+- [`iouring-net-lib/docs/05-cmake.md`](../../../engine-uring/doc/05-cmake.md)
   — library-side CMake authority (warning helper, sanitizer presets).
-- [`iouring-net-lib/docs/09-project-split.md`](../../iouring-net-lib/docs/09-project-split.md)
+- [`iouring-net-lib/docs/09-project-split.md`](../../2026-05-14-project-split.md)
   § "The seam — how the two projects connect" — the install contract
   this document implements.

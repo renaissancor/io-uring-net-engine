@@ -18,7 +18,7 @@ include(compiler-warnings)
 # ---------------------------------------------------------------------------
 # The engine — consumed ONLY through an install prefix (find_package), never
 # a relative include into ../engine-uring/src. This is the product/library
-# boundary from design-notes/09-project-split.md § "The contract surface":
+# boundary from design-notes/2026-05-14-project-split.md § "The contract surface":
 # if a header is missing here, the fix is amending the engine's public
 # FILE_SET, not reaching around it.
 #

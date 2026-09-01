@@ -1,7 +1,7 @@
 # 04 — Wire protocol
 
 The bytes on the wire. The framing is the library's authority — see
-[`iouring-net-lib/wiki/network/packet_framing.md`](../../iouring-net-lib/wiki/network/packet_framing.md)
+[`iouring-net-lib/wiki/network/packet_framing.md`](../../../engine-uring/doc/network/)
 when it lands. This document specifies the **product's contract**
 with that framing: ID ranges, payload conventions, size budgets, and
 the parity claim against the Windows reference.
@@ -53,7 +53,7 @@ declares a `header_code` of `0x89` that prefixes every frame. **We do
 not carry this byte.**
 
 Rationale (mirrors the library's
-[`wiki/network/packet_framing.md`](../../iouring-net-lib/wiki/network/packet_framing.md)
+[`wiki/network/packet_framing.md`](../../../engine-uring/doc/network/)
 decision):
 - The packet ID already gates "is this byte stream meaningful?" — an
   unrecognized ID closes the session.
@@ -216,7 +216,7 @@ byte 0   1    2   3    4 ...
 This is a **deliberate upgrade**: the Linux header gives us 65 535
 packet IDs (vs Windows' 256) and 65 531 byte payloads (vs Windows'
 255). The framing primitive in
-[`iouring-net-lib`](../../iouring-net-lib/wiki/network/packet_framing.md)
+[`iouring-net-lib`](../../../engine-uring/doc/network/)
 ships this layout, not the reference's.
 
 Stripping 0x89 alone does NOT yield a Linux-parseable frame; you
@@ -355,5 +355,5 @@ stub. Misframing (size < 4, payload truncated, etc.) produces a
   POD bodies that match this layout.
 - [`wiki/proto/packets.md`](../wiki/proto/packets.md) — the schema
   file's structure and how to add a new packet.
-- [`iouring-net-lib/wiki/network/packet_framing.md`](../../iouring-net-lib/wiki/network/packet_framing.md)
+- [`iouring-net-lib/wiki/network/packet_framing.md`](../../../engine-uring/doc/network/)
   — the framing primitive's spec (library-side; not yet implemented).

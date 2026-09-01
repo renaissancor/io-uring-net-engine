@@ -53,7 +53,7 @@ Three attractive explanations, tested and dead — recorded so nobody re-tests:
   15.7/9.6/10.7. No effect — and see the WSL2 note for why it could not have.
 - **The `batch` flush deferral.** `immediate` has no deferral and its tail is
   ten times worse (66 ms vs 0.24 ms at p99, 10k conns), which re-confirms
-  [`2026-08-17`](../client-bench/design/2026-08-17-three-instrument-defects.md) defect 1.
+  [`2026-08-17`](2026-08-17-three-instrument-defects.md) defect 1.
 
 ## 2. 100% CPU is not saturation
 
@@ -207,7 +207,7 @@ or stalled.
 
 - `src/traffic.cpp` — `read_proc_cpu()`, the fan-out gate, `report()`.
 - `merge.py` — fleet fan-out gate, server-CPU averaging, exit 3.
-- [`2026-08-17-three-instrument-defects.md`](../client-bench/design/2026-08-17-three-instrument-defects.md)
+- [`2026-08-17-three-instrument-defects.md`](2026-08-17-three-instrument-defects.md)
   — defect 3b is §4 here, with the fleet on the wrong side of it.
 - `README.md` "One process cannot verify itself" — §4 quantifies it, and the
   recorded baseline is understated by 3–5×.

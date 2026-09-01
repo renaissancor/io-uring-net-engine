@@ -11,7 +11,7 @@
 
 The library's test strategy is the floor; this document specifies what
 the product **adds** above that. See
-[`iouring-net-lib/docs/08-test-strategy.md`](../../iouring-net-lib/docs/08-test-strategy.md)
+[`iouring-net-lib/docs/08-test-strategy.md`](../../../engine-uring/doc/08-test-strategy.md)
 for unit/property/stress conventions that this repo inherits unchanged.
 
 The bar:
@@ -216,7 +216,7 @@ to find which field moved.
 bytes to the library's `packet_framing` and asserts the deframer
 doesn't crash, doesn't read past the input buffer, and doesn't
 infinite-loop. Per the library's fuzz convention (see
-[`iouring-net-lib/docs/08-test-strategy.md`](../../iouring-net-lib/docs/08-test-strategy.md)
+[`iouring-net-lib/docs/08-test-strategy.md`](../../../engine-uring/doc/08-test-strategy.md)
 when it covers fuzz).
 
 The product owns this harness because the failure mode it guards
@@ -292,7 +292,7 @@ presets. Combine reports before publishing.
 
 ## Cross-references
 
-- [`iouring-net-lib/docs/08-test-strategy.md`](../../iouring-net-lib/docs/08-test-strategy.md)
+- [`iouring-net-lib/docs/08-test-strategy.md`](../../../engine-uring/doc/08-test-strategy.md)
   — library test pyramid that this builds on.
 - [`07-ci.md`](07-ci.md) — which presets run on which trigger.
 - [`05-codegen.md`](05-codegen.md) § "Style mandates" — the
