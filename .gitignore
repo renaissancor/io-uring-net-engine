@@ -1,0 +1,83 @@
+# Repo-wide ignores. Subprojects keep their own .gitignore for
+# target-specific binaries (see engine-uring/, server-epoll/, client-bench/).
+
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+out/
+*.o
+*.d
+*.a
+*.so
+*.so.*
+*.dylib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+# CMake user-local preset overrides — never committed (per CMake convention)
+CMakeUserPresets.json
+
+# IDE / editors
+# NOTE: .idea/ is deliberately NOT ignored here — client-bench/ and
+# server-epoll/ commit their JetBrains project files. engine-uring/
+# ignores .idea/ in its own .gitignore; keep that choice per subproject.
+.vscode/
+.zed/
+.helix/
+*.swp
+*.swo
+*~
+.cache/
+.ccls-cache/
+.clangd/
+# ctags / cscope
+tags
+TAGS
+cscope.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling state (kept out of source control by default)
+.omc/
+.claude/
+
+# Coverage / sanitizers / perf
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+perf.data*
+core
+core.*
+vgcore.*
+
+# Local secrets / scratch
+.env
+.env.*
+scratch/
+.worktrees/
+
+# Merge / patch artifacts
+*.orig
+*.rej
+*.bak
+
+# Python tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Fuzzing artifacts (libFuzzer crash inputs)
+crash-*
+leak-*
+oom-*
+timeout-*
