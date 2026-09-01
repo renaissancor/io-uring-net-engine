@@ -1,6 +1,6 @@
 # Game server — imported design body
 
-> **Provenance.** These 18 documents came from `iouring-net-server`, a separate
+> **Provenance.** These 20 documents came from `iouring-net-server`, a separate
 > repository created by the two-repo split that
 > [`../2026-05-14-project-split.md`](../2026-05-14-project-split.md) argued for
 > and that was later rejected. The repository is gone; its history is grafted

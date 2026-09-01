@@ -49,7 +49,7 @@ not an argument anyone had on a particular afternoon.
 One exception to the flat rule, and it is provenance rather than taxonomy:
 [`game-server/`](game-server/) is an imported document set that arrived whole,
 from the separate `iouring-net-server` repository that the rejected two-repo
-split created. Its 18 documents cross-link each other and read as one body;
+split created. Its 20 documents cross-link each other and read as one body;
 scattering them by date would break that and gain nothing. It is kept intact,
 and its own [`README`](game-server/README.md) says which parts the library
 pivot invalidated.
