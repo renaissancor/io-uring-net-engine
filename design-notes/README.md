@@ -43,6 +43,7 @@ not an argument anyone had on a particular afternoon.
 | [`2026-06-06`](2026-06-06-supervisor-init-and-acceptor-lobby.md) | Supervisor init, acceptor as lobby |
 | [`2026-08-21`](2026-08-21-architecture-review.md) | Pre-data-path architecture review |
 | [`2026-08-21`](2026-08-21-phase2-architecture-pass.md) | Phase 2 architecture pass |
+| [`2026-09-01`](2026-09-01-architecture-review-disposition.md) | Disposition of the pre-data-path review — what landed, what is still open |
 
 ## `game-server/`
 
