@@ -61,6 +61,10 @@ jobs:
         run: cmake --build build/server
       - name: Test server-uring
         run: ctest --test-dir build/server --output-on-failure
+      # The control group's second build consumes the same prefix through the
+      # same seam. A header missing from the engine's FILE_SET fails here too.
+      - name: Build server-epoll's sds variant against the prefix
+        run: make -C server-epoll sds IOURING_NET_PREFIX="$PWD/prefix"
 
   # Concurrency gate. ASan and UBSan cannot see ordering bugs, and the SPSC
   # acquire/release cursors under sds::pipe are the load-bearing claim of the

@@ -16,6 +16,16 @@ would be measuring the constraints. **Do not make this fancy.** Change it only
 to fix a defect or to keep it a fair opponent, never to make it faster in a way
 the engine does not also get.
 
+The one exception is a **second build**, [`server_sds.cpp`](server_sds.cpp):
+the same server with its containers swapped for the engine's `sds::`
+primitives, consumed through the same `find_package` seam the io_uring server
+uses. It exists so the STL-versus-`sds::` delta is a measured row and so the
+epoll control and the io_uring server share their data structures and differ
+only in the I/O mechanism. `server.cpp` itself is unchanged; see
+[`doc/server_sds.md`](doc/server_sds.md) for what the second build is and
+[`result-notes/2026-09-02-stl-to-sds-the-measured-delta.md`](../result-notes/2026-09-02-stl-to-sds-the-measured-delta.md)
+for what it measured.
+
 ## Build and run
 
 ```bash
@@ -24,6 +34,27 @@ make                 # the build you MEASURE with (-O2 -DNDEBUG)
 
 make asan            # server-asan: correctness only, roughly half the throughput
 ```
+
+### Two builds
+
+| binary | source | containers | needs |
+|---|---|---|---|
+| `server` | `server.cpp` | STL | `make` only — the published baseline, dependency-free on purpose |
+| `server-sds` | `server_sds.cpp` | `sds::ring_buffer`, `sds::cstr_hash_map`, `sds::malloc_vector`, an `mmap` slab | cmake and an **installed** engine prefix |
+
+```bash
+# once: install the engine, exactly as CI and server-uring do
+cmake -S ../engine-uring -B ../build/engine -DCMAKE_BUILD_TYPE=Release
+cmake --build ../build/engine && cmake --install ../build/engine --prefix ../build/prefix
+
+make sds             # server-sds, -O2 -DNDEBUG, via CMakeLists.txt + find_package(iouring_net)
+make sds-asan        # server-sds-asan: correctness only
+IOURING_NET_PREFIX=/elsewhere make sds     # if the prefix lives elsewhere
+```
+
+Both binaries take the same environment knobs; `server-sds` adds
+`CHAT_SHORT_READ=1` and says `(sds)` in its banner, and `--server-pid` needs
+the exact process name (`pgrep -x server-sds`).
 
 ## Test modes
 
@@ -50,7 +81,7 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `dribble` | server reassembles frames split across many `recv()` calls |
 | `verify` 8×20 | 1,280/1,280 deliveries, exact bodies, 0 missing / 0 duplicate / 0 misattributed |
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
-| `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
+| `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive. With today's `chatcli.py` the flooding clients do not read during the flood either, so all 8 are dropped, on both builds |
 | SIGINT | clean shutdown via `signalfd` |
 | `loadgen` | see [`result-notes/`](../result-notes/) — byte-bound ceiling ≈1.78 GB/s with `CHAT_FLUSH=batch`; the earlier 2M deliveries/s figure was the client's limit, not the server's |
 
