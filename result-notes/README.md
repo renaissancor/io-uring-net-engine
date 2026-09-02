@@ -15,6 +15,7 @@ numbers now live where they belong.
 | this file | the single-threaded epoll baseline — the control group the io_uring engine gets compared against |
 | [`2026-08-30-what-limits-the-server.md`](2026-08-30-what-limits-the-server.md) | what limits the server and why CPU% does not say. Findings that outlive any particular number, including the ones that turned out wrong |
 | [`2026-09-01-where-the-epoll-server-saturates.md`](2026-09-01-where-the-epoll-server-saturates.md) | the ceiling reached at last — 1.78 GB/s byte-bound, and what the server does past it (it sheds clients, and the instrument said `[ OK ]`) |
+| [`2026-09-02-stl-to-sds-the-measured-delta.md`](2026-09-02-stl-to-sds-the-measured-delta.md) | STL to `sds::` on both programs: the client's collapse was two `recv()` per socket, not its containers; the `sds::` control cuts server user-space at 8–10M and is lossless at the 1024 B rung where the STL server sheds |
 
 Method and instrument: [`../client-bench/`](../client-bench/). The verdict
 rules that decide whether a run counts at all are in

@@ -45,7 +45,7 @@ a 3-process fleet:
 
 | | |
 |---|---|
-| **Ceiling** | **byte-bound at ≈1.78 GB/s** — 1.70M deliveries/s at 1024 B, 3.50M at 512 B. At 64 B the ceiling was never reached: every collapse was the client's, and the fitted model puts it near 13M deliveries/s |
+| **Ceiling** | **byte-bound at ≈1.78 GB/s** — 1.70M deliveries/s at 1024 B, 3.50M at 512 B. At 64 B, **observed on 2026-09-02**: lossless at 10M deliveries/s, shedding at 12M (the fitted 13.4M was high). The same server rebuilt on the engine's `sds::` primitives (`server-sds`) is lossless at 12M / 2.20M at 1024 B — +20 % and +29 %, [`result-notes/2026-09-02`](result-notes/2026-09-02-stl-to-sds-the-measured-delta.md) |
 | Latency below the ceiling | set by the **sweep period**, i.e. connection count, not by load — sub-millisecond p50 at 10k connections up to the client's limit |
 | CPU | 100% of one core from 3M to 10M deliveries/s — **100% is not a saturation signal** here |
 | Connection scale | 40k established, 0 attrition — but only across 4 source IPs |
@@ -106,8 +106,8 @@ headroom is still a run.
 
 | component | state |
 |---|---|
-| `server-epoll` | complete; baseline measured three times, earlier numbers withdrawn |
-| `client-bench` | complete; fleet mode, correctness judge, verdict gating |
+| `server-epoll` | complete; baseline measured three times, earlier numbers withdrawn; a second build, `server-sds`, on the engine's primitives through the `find_package` seam |
+| `client-bench` | complete; fleet mode, correctness judge, verdict gating; 2026-09-02: half the `recv()` calls, carries 10M deliveries/s per 12 vCPUs |
 | `engine-uring` | in progress — primitives and transport land; 96 tests green |
 | `server-uring` | in progress — runtime spine and thread mesh moved in, 17 tests green; data path is the current work |
 

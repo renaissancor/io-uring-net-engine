@@ -32,7 +32,12 @@ they point at, but not the directory, and the boundary is load-bearing:
 - `engine-uring` bans the STL (`std::function`, exceptions, streams, `std::`
   sync types; `sds::` containers instead). A load generator has no reason to
   obey that, and obeying it would mean a rewrite for nothing. Here the STL
-  stays.
+  stays — **out of the hot loop**. Since 2026-09-02 the receive path parses in
+  place from a per-connection slot in one `mmap` slab and the send path hands a
+  stack-built frame straight to `send()`; `std::string` still holds an unsent
+  tail and everything off the hot path. Nothing from the engine is linked: an
+  instrument that shared a `ring_buffer` with the io_uring server would share
+  its defects too.
 - Nothing here has a performance requirement in its *judging* role, which is
   why one half is C++ and the other is Python.
 
