@@ -22,10 +22,11 @@ Landed so far: the CMake scaffolding + dependency graph (`liburing`, `{fmt}`,
 `Catch2`, `tl::expected`) + CI floor job, the primitive layer
 (`sds::ring_buffer`, `mem::packet_pool`, `sync::` atomics/mutex,
 `diagnostic::profiler_scope`), and — now in `../server-uring/` — the 3-role supervisor/acceptor/worker boot
-spine and the thread-mesh runtime (`app::spsc_mailbox`, `app::session_table`).
+spine and the thread-mesh runtime (`sds::pipe` framed by `app/mesh.h`, `app::session_table`).
 The data path on top — protocol framing, worker-side session storage, rooms, and
-the per-worker `io_uring` chat loop — is the current work. Per-file design specs
-live under `doc/<category>/<name>.md`; the runtime architecture lives in
+the per-worker `io_uring` chat loop — is the current work. Each source unit has a
+doc describing it under `doc/<category>/<name>.md` (map: `doc/INDEX.md`); the
+runtime architecture lives in
 `../server-uring/doc/10-realtime-server-architecture.md`.
 
 ---
@@ -88,17 +89,18 @@ In scope for v1:
    thread; no coroutines.
 2. **Three-role runtime** — supervisor (spawn/shutdown), SessionManager/acceptor
    (accept + session authority map), worker (owns adopted fds + rooms), wired by
-   SPSC mailboxes.
+   SPSC byte pipes (`sds::pipe`, framed by `app/mesh.h`).
 3. **Room chat over the custom frame** — `[uint16 size | uint16 id][payload]`;
    join / chat / leave, with gameplay packets gated behind `S_ENTER_WORLD_OK`.
-4. **Primitive layer** — `mem::packet_pool` (47 size classes, ported from
-   `IOCP_Rookiss`), `sds::ring_buffer`, and the `sync::` primitives
+4. **Primitive layer** — `mem::packet_pool` (three fixed buckets over one
+   per-thread `mmap` region), `sds::ring_buffer`, and the `sync::` primitives
    (project-owned `lnx::atomic*` / `lnx::mutex`, **no `std::` sync types** — see
    the No-STL policy in `doc/04-coding-style.md`).
 
 Out of scope for v1: real login/auth, database/persistence, TLS, multiple
-workers, world migration, serious benchmark claims, and Windows compatibility
-shims. (Room chat itself is *in* scope — it is the v1 milestone, a testbed for
+workers, world migration, and Windows compatibility shims. Benchmark claims
+about *this* server wait for its data path; the hypothesis they will test is
+already written (`../design-notes/2026-09-02-where-io-uring-becomes-meaningful.md`). (Room chat itself is *in* scope — it is the v1 milestone, a testbed for
 the future interaction-space model.)
 
 ---
@@ -149,7 +151,7 @@ gcc-12 floor preset):
   atomics/mutex, `diagnostic::profiler_scope`.
 - Runtime spine — 3-role supervisor boot (main / acceptor / worker), the
   handle/engine split, and an `io_uring` echo *transport* smoke. The spine and
-  the thread mesh (`app::spsc_mailbox`, `app::session_table`) migrated to
+  the thread mesh (`sds::pipe` + `app/mesh.h`, `app::session_table`) migrated to
   [`../server-uring/`](../server-uring/) with their tests; the engine keeps the
   transport smoke and everything below the app layer.
 

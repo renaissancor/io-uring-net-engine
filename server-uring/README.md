@@ -2,7 +2,7 @@
 
 The chat/game server built **on top of** `engine-uring`. The runtime layer —
 the 3-role supervisor / acceptor / worker boot spine, the SPSC thread mesh
-(`app::spsc_mailbox`), and the SessionManager `app::session_table` authority
+(`sds::pipe` framed by `app/mesh.h`), and the SessionManager `app::session_table` authority
 map — lives here with its tests, moved out of the engine tree the day the
 boundary became consumable. The room-chat data path on top of it is the
 current work.

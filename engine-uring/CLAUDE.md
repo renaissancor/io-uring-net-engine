@@ -9,8 +9,9 @@ obvious from the code.
 A Linux-native **C++20 realtime interaction network engine for MMO/RTS-style
 servers** on `io_uring`. First milestone is single-SessionManager + one-worker
 room chat. The runtime source of truth is
-`doc/10-realtime-server-architecture.md`. Design decisions live in `.omc/wiki/`
-(decision records) and `doc/<category>/<name>.md` (per-file specs).
+`../server-uring/doc/10-realtime-server-architecture.md`. Dated design
+decisions live in `../design-notes/`; `doc/<category>/<name>.md` describes
+each built source unit (map: `doc/INDEX.md`).
 
 ## Build / test
 
@@ -22,7 +23,7 @@ rtk make build PRESET=release  # no sanitizers
 ```
 
 Build dirs are `build/<preset>/`. Run one test binary directly with an absolute
-path (`cd` does not persist across Bash calls): `build/default/tests/iouring_net-test "[app][mailbox]"`.
+path (`cd` does not persist across Bash calls): `build/default/tests/iouring_net-test "[app][mesh]"` (in `server-uring`).
 
 ## Hard rules (these override instinct)
 
@@ -35,7 +36,7 @@ path (`cd` does not persist across Bash calls): `build/default/tests/iouring_net
   `u16/u32/u64`, `i16/i32/i64`, `byte`, `usize`, `isize`. `u8` will not compile.
 - **Namespaces:** `lnx::` = raw POSIX/Linux primitives (atomic, mutex, thread);
   `sds::` = generic data structures (personal library, domain-free); `app::` =
-  domain/runtime (supervisor, acceptor, worker, mailbox, session_table);
+  domain/runtime (supervisor, acceptor, worker, mesh, session_table);
   `mem::` = pools. No umbrella namespace just to group a folder.
 - **Naming:** Linux side is `snake_case`. Category-prefix filenames
   (`profiler_scope.h`, not `scope_profiler.h`).
@@ -51,7 +52,7 @@ path (`cd` does not persist across Bash calls): `build/default/tests/iouring_net
 
 One fd → one owner thread. One room/world state → one owner thread. The owning
 worker parses and executes its own packets in-thread. Cross-thread = SPSC
-message passing (`app::spsc_mailbox`), never shared mutable state on the hot
+message passing (`sds::pipe` framed by `app/mesh.h`), never shared mutable state on the hot
 path. Gameplay packets valid only after `S_ENTER_WORLD_OK`. DB/auth deferred
 (fake guest identity in v1).
 
@@ -72,6 +73,7 @@ path. Gameplay packets valid only after `S_ENTER_WORLD_OK`. DB/auth deferred
 - Once an engine loop blocks in `io_uring_wait_cqe` (today they `yield()` +
   `peek_cqe`), an atomic stop flag alone won't wake it — pair `request_stop()`
   with eventfd/timeout wake. See `doc/runtime/thread.md` §"Cooperative stop".
-- Some older `doc/` text still assumes the two-repo library/product split
-  (rejected — this is a monorepo) and a coroutine identity (dropped). Treat
-  `doc/10-…` and this file as current when they conflict with older docs.
+- Specs for the May 2026 designs that were never built (two-tier reactor,
+  8-byte header, typed packets, memory tiers) were moved out of `doc/` to
+  `../design-notes/unbuilt-specs-2026-05/` on 2026-09-02. Everything left in
+  `doc/` describes built code; when it conflicts with a header, the header wins.

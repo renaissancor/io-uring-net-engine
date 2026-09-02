@@ -71,10 +71,15 @@ Three processes, ~10k connections total, so the client is not in the way.
 | 20 | 2.0M | 0.102 ms | 1.480 ms | 0.021 ms | 0.056 ms — **2x low** |
 | 30 | 3.0M | 18.533 ms | 38.701 ms | 0.024 ms | 0.136 ms — **136x low** |
 
-**The ceiling is 2M deliveries/s.** Below it the server holds a sub-millisecond
-p50; at 3M it is 18.5 ms and past the knee. The earlier "2M measured, 3M
-observed" reading came from a client that could not see the queue it was
-creating.
+**This table's knee at 2M deliveries/s is not the server's ceiling.** It was
+read as one when this section was written; the two later notes withdrew that.
+[`2026-08-30`](2026-08-30-what-limits-the-server.md) § 2 pushed the same
+server to 10M deliveries/s at 100% CPU with every collapse on the client's
+side, and [`2026-09-01`](2026-09-01-where-the-epoll-server-saturates.md)
+reached the real ceiling by making the server byte-bound: ≈1.78 GB/s. What
+the rows above do show is the sweep-period latency and the instrument defect
+the fleet corrected. The paragraph is kept as written, per the rule that a
+recorded number is corrected beside, not over.
 
 ### One process cannot verify itself
 
@@ -121,11 +126,14 @@ Read the direction, not just the value: the kernel share is highest where the
 server is least busy. Quoting a single figure hides that, which is how the
 first session ended up with "92%" as if it were a constant.
 
-That is the io_uring argument measured rather than assumed: the cost being
-attacked is syscall transitions, and that is where the budget sits. It is also
-the honest ceiling, and the honest ceiling has moved twice — first because 92%
-was measured against a naive baseline, and again because the throughput bar
-rose from 700k to 2M measured / 3M observed.
+When this was written the kernel share read as "the io_uring argument
+measured rather than assumed". [`2026-08-30`](2026-08-30-what-limits-the-server.md)
+§ 2 then found the share *falling* from 86% to 77% while CPU held 100% from
+3M to 10M deliveries/s, so it is not a saturation signal and not on its own
+an argument. The argument that survives is the per-tick cost model in
+[`design-notes/2026-09-02-where-io-uring-becomes-meaningful.md`](../design-notes/2026-09-02-where-io-uring-becomes-meaningful.md),
+in which the syscall term is one of two terms and its weight depends on
+connections per thread.
 
 **Re-run this split first against the io_uring server, and against `batch`,
 never against `immediate`.** If the split does not move, the port did not do

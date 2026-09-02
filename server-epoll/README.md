@@ -52,15 +52,15 @@ python3 chatcli.py slowreader --clients 8 --messages 300
 | `load` 30×30 | 900 chats → 27,495 frames, 100% delivery, ASan clean |
 | `slowreader` | `[drop] fd=7 send buffer over cap (261948 B)`, server stays responsive |
 | SIGINT | clean shutdown via `signalfd` |
-| `loadgen` | see `client-bench/README.md` — 2M deliveries/s with `CHAT_FLUSH=batch`, measured with a 3-process fleet |
+| `loadgen` | see [`result-notes/`](../result-notes/) — byte-bound ceiling ≈1.78 GB/s with `CHAT_FLUSH=batch`; the earlier 2M deliveries/s figure was the client's limit, not the server's |
 
 ## Clients live in `client-bench`
 
 Both the load generator (`src/`, driven by `fleet.py`) and the interactive/verify
 client (`chatcli.py`) were extracted to [`client-bench`](../client-bench). They had to
-leave: this repo is marked for deletion, and both are needed to evaluate the
-io_uring server that replaces it — the baseline numbers exist precisely to be
-compared against later.
+leave: this server is the control group and stays, but both clients are shared
+with the io_uring server it is compared against, and an instrument that lives
+inside one of the two things it measures is not an instrument.
 
 ```bash
 cd ../client-bench && make
@@ -105,8 +105,9 @@ and only the latency differed, by a factor of 15,000. Measured three times; the 
 run used a **fleet of client processes**, and it withdrew the single-process
 numbers above 500k/s — one loadgen process was stamping receive times per
 epoll batch and was itself inside the flow-control loop, so it reported 0.136 ms
-where three processes carrying the same load reported 18.533 ms. Full tables,
-method, and the two mechanisms are in `client-bench/README.md`.
+where three processes carrying the same load reported 18.533 ms. Full tables
+and method are in [`result-notes/`](../result-notes/); the instrument's own
+traps are in [`client-bench/README.md`](../client-bench/README.md).
 
 ## Protocol
 
@@ -117,12 +118,15 @@ project takes.
 struct { uint16_t len; uint16_t type; }   // len = payload bytes, header excluded
 ```
 
-The real project's header (`server-uring`'s, once written) is also
-4 bytes, `[uint16 size][uint16 id]`, and differs in exactly one respect:
-**`size` counts the header, `len` does not.** The width is the same; the
-inclusive/exclusive convention is the whole porting seam, and it is what
-`client-bench --proto` switches. An earlier note here claimed the real project
-used an 8-byte header — the protocol doc is authoritative and says otherwise.
+The io_uring server's header (`server-uring`'s, once its data path exists)
+is planned as 4 bytes, `[uint16 size][uint16 id]`, differing in exactly one
+respect: **`size` counts the header, `len` does not.** The width is the same;
+the inclusive/exclusive convention is the whole porting seam, and it is what
+`client-bench --proto` switches; both layouts are defined in one place,
+[`client-bench/src/wire.h`](../client-bench/src/wire.h). An 8-byte header
+`{size, opcode, sequence, flags, version}` was designed in May 2026 and never
+built; that spec is kept as dated deliberation under
+[`design-notes/unbuilt-specs-2026-05/`](../design-notes/unbuilt-specs-2026-05/).
 
 | type | direction | meaning |
 |---|---|---|
