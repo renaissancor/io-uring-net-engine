@@ -147,6 +147,18 @@ bool flush_pending(int fd, conn& c)
 
 // Pulls everything available into c.in. Returns false when the peer closed or
 // the socket errored.
+//
+// Stops after a SHORT read. Under level-triggered epoll a recv() that returns
+// fewer bytes than asked has emptied the socket at that instant; the classic
+// "loop until EAGAIN" then costs a second syscall per readable socket that
+// only ever returns EAGAIN, and epoll_wait re-reports the fd anyway if more
+// arrives. Measured before this change: exactly two recv() per readable
+// socket (200,022 recvs for 100,650 frames under callgrind), and recv() was
+// ~90% of this process's syscalls -- the kernel half of a saturated client.
+// Semantics are unchanged: the same bytes are read, the per-socket recv stamp
+// is still taken after this returns, and bytes that land during the walk are
+// read in the next batch with a later, more honest stamp instead of an
+// earlier one.
 bool read_available(int fd, conn& c, uint64_t& bytes_in)
 {
     for (;;) {
@@ -154,7 +166,8 @@ bool read_available(int fd, conn& c, uint64_t& bytes_in)
         if (n > 0) {
             bytes_in += static_cast<uint64_t>(n);
             c.in.append(g_scratch, static_cast<size_t>(n));
-            continue;
+            if (static_cast<size_t>(n) < sizeof(g_scratch)) return true;   // drained
+            continue;   // exactly filled: there may be more
         }
         if (n == 0) return false;
         if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
