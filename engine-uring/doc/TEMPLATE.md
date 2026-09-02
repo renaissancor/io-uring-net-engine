@@ -1,22 +1,24 @@
 # <unit> — <one-line role>
 
 <!--
-  doc/ SPEC TEMPLATE.  Copy this for every source unit; the file mirrors src/
-  1:1 (a header and its .cpp share ONE doc file: doc/<path>.md for
-  src/<path>.h[/.cpp]).
+  doc/ TEMPLATE. One file per source unit, mirroring src/ 1:1 (a header and
+  its .cpp share ONE doc: doc/<path>.md for src/<path>.h[/.cpp]).
 
-  CONTRACT: doc/ is the SOURCE OF TRUTH. An agent must be able to implement the
-  unit from THIS FILE ALONE — without opening ../design-notes/. If it can't, the spec is
-  incomplete. The "why" lives in ../design-notes/; link to it, never depend on it.
+  CONTRACT: this file DESCRIBES THE BUILT CODE. Write it from the header. If
+  the header and this file disagree, the header is right and this file is
+  stale. Do not describe planned behaviour; if a source comment mentions a
+  future change, omit it or give it one clause marked "not built". The "why"
+  is dated deliberation in ../../design-notes/ — link to it if useful, never
+  depend on it.
 
-  Keep the ## API block exact and normative — those signatures ARE the contract.
-  Delete this comment in real specs.
+  Delete this comment in real docs. Filled reference:
+  ../../server-uring/doc/mesh.md
 -->
 
-> **Status:** planned | in-progress | landed
+> **Status:** landed | in-progress
 > **Source:** `src/<path>.h` [ + `src/<path>.cpp` ]
 > **Namespace:** `<ns>`
-> **Depends:** `<unit>`, `<unit>`   (units that must be built first; names as in INDEX.md)
+> **Depends:** `<unit>`, `<unit>`   (units that must exist first; names as in INDEX.md)
 
 ## Purpose
 
@@ -24,10 +26,9 @@
 
 ## API
 
-The exact, normative signatures a caller sees. This is the contract the
-implementation must satisfy and the agent implements against. Group logically
-(construction / producer side / consumer side / observers). Include compile-time
-constants, type aliases, and `static_assert`ed preconditions.
+The exact public declarations, copied from the header and trimmed of
+bodies. Keep every signature, constant, type alias, and `static_assert`.
+Keep the header's own comments where they state a contract.
 
 ```cpp
 namespace <ns> {
@@ -37,13 +38,13 @@ namespace <ns> {
 
 ## Invariants
 
-Bullet list of what must ALWAYS hold — ownership rules, threading contract,
-all-or-nothing guarantees. State whether violations are guarded (trap) or UB.
+What must ALWAYS hold — ownership, threading contract, all-or-nothing
+guarantees. Say whether a violation traps (`LNX_CHECK`) or is undefined.
 
 ## Errors & edge cases
 
-Each failure mode and the DEFINED behavior: return `0` / `false` / `nullptr`,
-`LNX_CHECK` trap, no-op, etc. Cover empty/full/oversize/boundary explicitly.
+Each failure mode and its DEFINED behaviour: return value, trap, no-op.
+Cover empty / full / oversize / boundary explicitly. A table reads well.
 
 ## Notes
 
@@ -52,17 +53,6 @@ sizing math, cache-line placement, sanitizer gotchas. Skip the obvious.
 
 ## Test plan
 
-The cases that prove the contract, mapped to `tests/<path>_test.cpp`. One line
-per case.
-
-## Done when
-
-- [ ] Builds on `default` and `floor` presets
-- [ ] Tests pass under ASan+UBSan
-- [ ] This spec matches the built API (doc-is-source-of-truth)
-- [ ] <unit-specific gate>
-
-## Rationale
-
-One-way links into the journal for the "why" (human-only; the spec above is
-self-sufficient without them): `../design-notes/<date>-<topic>.md`, `.omc/wiki/<page>.md`.
+One line per EXISTING test case that exercises this unit, mapped to
+`tests/<path>_test.cpp`. If none: "No dedicated test." Never list a test
+that has not been written.

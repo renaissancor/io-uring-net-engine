@@ -1,9 +1,12 @@
-# `doc/` — project guides + per-file code specs
+# `doc/` — project guides + per-unit code docs
 
 This file indexes the **project-level guides** at `doc/` root. The
-**per-source-file specs** live under `doc/<category>/` mirroring `src/`; their
-build order and dependency graph are in [`INDEX.md`](INDEX.md) (the entry point
-for building from spec). The *why* — dated rationale — lives in `../design-notes/`.
+**per-unit docs** live under `doc/<category>/` mirroring `src/` 1:1, and each
+one **describes the code that exists** — API, invariants, failure behaviour,
+existing tests — written from the header and stale the moment the header
+changes. [`INDEX.md`](INDEX.md) is the code map. The *why*, and anything that
+describes code not yet or never built, is dated deliberation in
+[`../../design-notes/`](../../design-notes/).
 
 ## What each guide covers
 
@@ -26,7 +29,7 @@ docs and dropped (the journal is preserved in git history).
 
 ## Suggested reading order
 
-- **Building a unit from spec:** `INDEX.md` → the unit's `doc/<path>.md`.
+- **Reading a unit:** `INDEX.md` → the unit's `doc/<path>.md` → its header.
 - **First-time reader:** `00` → `10` → `01` → `04`. After that you can read any
   per-file spec independently.
 - **Setting up a dev box:** `06` → `02` (kernel section) → `05`.

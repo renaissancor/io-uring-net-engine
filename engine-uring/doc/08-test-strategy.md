@@ -109,9 +109,9 @@ server **after a header-normalization step** that converts the
 reference's 3-byte `[0x89][u8 size][u8 type]` header to this library's
 4-byte `[u16 size][u16 id]` header. Parity is a **payload-byte**
 claim, not a frame-byte claim — see
-[`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
-§ "Purpose" and
-`server-uring/docs/04-protocol.md`
+[`../../client-bench/src/wire.h`](../../client-bench/src/wire.h) (the shared
+framing definition; the engine's framing unit is not built) and the imported
+[`../../design-notes/game-server/docs/04-protocol.md`](../../design-notes/game-server/docs/04-protocol.md)
 § "Parity with the Windows reference" for why.
 
 **Fixture capture.** From the Windows reference build, run a short

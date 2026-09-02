@@ -1,9 +1,10 @@
 # 10 — Realtime Server Architecture
 
-Durable source of truth for the runtime shape. This is a **live design doc**,
-not a historical log — keep it short enough to stay current. Dated design
-discussions live under `../design-notes/`; decision records live in the
-`.omc/wiki/` and `doc/` trees.
+The binding description of the runtime shape: what the threads are, what
+each owns, and the invariants the code must satisfy. Revised whenever the code
+moves; when the two disagree, one of them is a bug. Dated deliberation lives
+under [`../../design-notes/`](../../design-notes/); each built unit is
+described in [`INDEX.md`](INDEX.md) and its `doc/<unit>.md`.
 
 ---
 
@@ -15,7 +16,12 @@ authoritative world-state mutation on the same owner thread so per-interaction
 latency is predictable.
 
 The first visible demo is **room-based chat**. That is a testbed for the
-`InteractionSpace` model, not the ceiling of the architecture.
+room model (§ 3a), not the ceiling of the architecture.
+
+The repository's purpose, which this engine serves, is stated in
+[`../../design-notes/2026-09-02-design-notes-drift-review.md`](../../design-notes/2026-09-02-design-notes-drift-review.md)
+§ 0: optimisation work that can be shown, loop structure worth reading, and
+an engine a game server could use.
 
 ## 2. Why C++ / Linux / io_uring
 
@@ -37,7 +43,7 @@ with direct control over memory, syscalls, wakeups, and ownership boundaries.
 ```
 Supervisor / Main
   sole spawner; owns config + queues + thread control blocks; sigwait + ordered
-  shutdown. Never runs an engine.  (src/app/main.cpp)
+  shutdown. Never runs an engine.  (src/main.cpp)
 
 SessionManager / Acceptor
   owns listen/accept; mints session_id + generation; fake-auths guest
@@ -53,8 +59,25 @@ LoggerThread   — later. One SPSC queue per producer; never blocks a worker.
 Db / AuthThread — later. Ticket validation off the hot path.
 ```
 
-v1 boots **three roles, one worker**. Multiple workers, world migration, DB
-auth, and the logger thread are later passes.
+v1 boots **three roles, one worker** by default. The worker count is a
+compile-time knob (`k_worker_count` in `src/roster.h`, 1..8;
+`-DIOURING_NET_WORKER_COUNT=N`) so a worker-count sweep is cheap to build, but
+nothing in the data path is multi-worker yet: rooms live on worker 0. World
+migration, DB auth, and the logger thread are later passes.
+
+### 3a. Glossary
+
+Earlier notes used several words for the same things. The words this document
+uses, and what the older ones map to:
+
+| here | means | older names, retired |
+|---|---|---|
+| **worker** | the thread that owns session fds, their rings, their rooms, and its own io_uring; parses and executes in-thread | content thread, WorldThread, strand, "channel" as a thread (May 2026) |
+| **acceptor** | the thread that owns listen/accept, mints session ids, and holds the `session_id → owner` authority map | SessionManager, accept/gateway thread, lobby |
+| **supervisor** | the main thread: spawns, wires the mesh, waits on signals, orders shutdown | LANDLORD (for its allocation role) |
+| **room** | the unit of interaction whose state exactly one worker mutates; a worker hosts many | channel (as a room), interaction unit, InteractionSpace, zone |
+| **world** | not defined yet. Where it appears below it means "the set of rooms a worker owns"; world migration is a later pass | — |
+| **mesh** | the SPSC byte pipes between roles, framed by `app/mesh.h` | spsc_mailbox (retired code), inbox |
 
 ## 4. Ownership invariants (non-negotiable)
 
@@ -76,8 +99,9 @@ I/O** — it does not keep fd read/write ownership once a worker adopts the fd.
 
 Supervisor + one SessionManager + one Worker carrying a single client through
 connect → room select → chat → disconnect, with the SessionManager's authority
-map staying correct throughout. See §"Final Test Target" in `handoff.md` and
-the test rows in `doc/08-test-strategy.md`.
+map staying correct throughout. The lifecycle and mesh tests under `tests/`
+cover the boot spine and handoff message path today; the end-to-end client
+path waits on the data path (§ 12).
 
 ## 6. V1 client state machine
 
@@ -175,8 +199,11 @@ a worker.
 ## 12. Non-goals for the current pass
 
 Real login/auth, PostgreSQL, DDoS/session-interruption hardening, TLS,
-persistence, multiple workers, world migration, open-world partitioning, final
-RTS/MMO game logic, serious benchmark claims, and a Windows-native IOCP client
-are all out of scope. **Prove the three-thread ownership model and room chat
-first.** The io_uring echo smoke (`tests/net/echo_smoke_test.cpp`) remains a
+persistence, multi-worker rooms, world migration, open-world partitioning,
+final RTS/MMO game logic, and a Windows-native IOCP client are all out of
+scope. **Prove the three-thread ownership model and room chat first.**
+Benchmark claims about this server wait for its data path; the hypothesis
+they will test, and the tick-budget experiment that tests it, are already
+written in
+[`../../design-notes/2026-09-02-where-io-uring-becomes-meaningful.md`](../../design-notes/2026-09-02-where-io-uring-becomes-meaningful.md). The io_uring echo smoke (`../engine-uring/tests/net/echo_smoke_test.cpp`) remains a
 low-level transport test, not the product milestone.

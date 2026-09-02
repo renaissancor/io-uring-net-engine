@@ -148,7 +148,7 @@ against ABA explicitly — either via tagged pointers (low bits as a
 generation counter; requires 16-byte alignment of nodes) or hazard pointers.
 This is **the** subtlety that agent-written replacements get wrong.
 
-See `doc/sync/lock_free_stack.md` for the full design.
+A paper design for a Treiber stack exists in `../../design-notes/unbuilt-specs-2026-05/sync-lock_free_stack.md`; it was never built.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/MemoryPool.h:9`, `Engine/MemoryPool.cpp:8, 14, 21, 26`
@@ -198,7 +198,7 @@ See `doc/sync/lock_free_stack.md` for the full design.
 **Userdata convention:** every SQE submitted in this project encodes a tagged
 pointer in `sqe->user_data` whose low bits identify the op type and high
 bits point to the owning session.
-See `doc/network/io_uring_reactor.md`.
+The reactor is not built; the runtime loop that will own it is described in `../../server-uring/doc/10-realtime-server-architecture.md` § 8.
 
 **Origins:**
 - `IOCP_Rookiss/Engine/pch.h:12-14` (winsock includes — declared but unused)
@@ -252,11 +252,10 @@ Win32 has multiple error mechanisms (`GetLastError`, `WSAGetLastError`,
 `HRESULT`, `errno` for CRT). Linux has one: `errno` (and for `io_uring`, the
 negated value of `cqe->res`).
 
-This project uses `std::error_code` as the public surface (see
-`doc/sync/sync_primitives.md` and `doc/network/io_uring_reactor.md`
-for the error category). I/O failures return `expected<T,
-std::error_code>` (project alias resolving to `tl::expected` — see
-`doc/02-build-and-toolchain.md` polyfill section); bugs throw.
+This project uses `std::error_code` as the public error surface. I/O
+failures return `expected<T, std::error_code>` (project alias over
+`tl::expected` — see `doc/error/expected.md`); bugs trap through `LNX_CHECK`
+(`doc/check.md`). Nothing throws.
 
 ---
 

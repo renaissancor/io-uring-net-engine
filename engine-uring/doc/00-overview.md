@@ -60,8 +60,8 @@ primitives and `liburing`; the network layer depends on the reactor and
 primitives; application code depends on the network layer.
 
 The top layer (Application) does not live in this directory. It belongs
-to `server-uring/`, a sibling directory in this monorepo that is
-reserved and not yet written; it will consume this library through
+to [`../../server-uring/`](../../server-uring/), which holds the
+supervisor / acceptor / worker runtime and consumes this library through
 `find_package(iouring_net)` against an install prefix, never through a
 relative include. That boundary is the point and survives the two
 projects sharing one repo. See
@@ -73,7 +73,17 @@ connects the two projects.
 
 ## Subsystem inventory
 
-| Layer       | Subsystem                              | Status     | Reference origin                                        |
+**This is the inventory as planned in May 2026 against the reference
+repositories, kept as the map of intent.** The third column is provenance
+(port, rewrite, new), not build state. What is actually built is the thirteen
+units in [`INDEX.md`](INDEX.md) plus the runtime in `server-uring/`; of the
+rows below, `ring_buffer`, `lnx::mutex`, `lnx::atomic*`, `malloc_vector`,
+`cstr_hash_map`, and `profiler::scope` exist, `packet_pool` exists in a
+different shape from `memory_pool`, and the rest have either a paper design
+under [`../../design-notes/unbuilt-specs-2026-05/`](../../design-notes/unbuilt-specs-2026-05/)
+or no design at all.
+
+| Layer       | Subsystem                              | Origin     | Reference origin                                        |
 |-------------|----------------------------------------|------------|---------------------------------------------------------|
 | Primitive   | `memory_pool`                          | Port       | `IOCP_Rookiss/Engine/MemoryPool.h:14`                   |
 | Primitive   | `object_pool`                          | Port       | `IOCP_Rookiss/Engine/ObjectPool.h:8`                    |
@@ -167,9 +177,10 @@ This is a design-doc honesty marker, not a problem.
    scoped honestly: it does **not** mean an unmodified Windows client
    binary speaks to the Linux server end-to-end (v1 ships no
    compat-deframer), and "strip 0x89" alone is **not** sufficient. See
-   [`../doc/network/packet_framing.md`](../doc/network/packet_framing.md)
-   § "Purpose" and the consumer-side detail in
-   `server-uring/docs/04-protocol.md`
+   the framing definition both targets share today,
+   [`../../client-bench/src/wire.h`](../../client-bench/src/wire.h) (the
+   engine's own framing unit is not built), and the imported protocol design in
+   [`../../design-notes/game-server/docs/04-protocol.md`](../../design-notes/game-server/docs/04-protocol.md)
    § "Parity with the Windows reference."
 
 7. **Namespace tiers.** `lnx::` is reserved for raw POSIX/Linux API
@@ -203,7 +214,8 @@ This is a design-doc honesty marker, not a problem.
   research project.
 - **Magic byte (0x89) in packet header.** SelectServer's reference
   framer uses one; we explicitly do not. Application-level packet IDs
-  do the same job. See `doc/network/packet_framing.md`.
+  do the same job. The framing unit itself is not built; the 4-byte header
+  both targets speak is defined in `client-bench/src/wire.h`.
 
 ---
 
