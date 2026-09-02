@@ -1,3 +1,9 @@
+---
+status: superseded
+superseded_by:
+  - 2026-05-23-session-account-data-model.md
+still_holds: session-as-handle over SoA storage; drop-and-close backpressure; Posture A (library = transport); stateless framing
+---
 # Chat Server Data Layout Discussion — 2026-05-19 Evening
 
 Companion record to `2026-05-19-server-architecture.md` and

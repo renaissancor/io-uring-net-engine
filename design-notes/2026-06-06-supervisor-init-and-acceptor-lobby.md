@@ -1,3 +1,10 @@
+---
+status: superseded
+superseded_by:
+  - ../server-uring/doc/10-realtime-server-architecture.md
+still_holds: supervisor boot order; LANDLORD allocation principle, boundary narrowed by 2026-08-21-phase2-architecture-pass.md
+note: doc/10 section 7: v1 does not give the acceptor pre-world I/O; the phase-2 pass asked for this banner on 2026-08-21
+---
 # Supervisor Initialization & Acceptor-as-Lobby Discussion — 2026-06-06
 
 Companion record to the `.omc/wiki/` revisions made the same day:

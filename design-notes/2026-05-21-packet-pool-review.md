@@ -1,3 +1,9 @@
+---
+status: accepted
+amended_by:
+  - 2026-05-25-handle-engine-split.md
+note: the app::worker entry-point shape in this note was replaced by the handle/engine split
+---
 # 2026-05-21 — packet_pool review todo
 
 Findings from the Claude + Codex pass on the freshly-landed `packet_pool`

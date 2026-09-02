@@ -1,3 +1,9 @@
+---
+status: accepted
+amended_by:
+  - 2026-08-21-phase2-architecture-pass.md
+note: state names renamed by the phase-2 pass; migration mechanism (Lock 9) still deferred
+---
 # Session/Account Data Model Discussion — 2026-05-23
 
 Companion record to `.omc/wiki/chat-server-v1-session-account-data-model.md`.

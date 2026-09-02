@@ -1,3 +1,10 @@
+---
+status: superseded
+superseded_by:
+  - 2026-05-21-chat-only-scope-reconstructed.md
+  - 2026-09-02-design-notes-drift-review.md
+still_holds: the weak-vs-strong positioning argument for a chat server
+---
 # Portfolio Strategy Discussion — 2026-05-19
 
 > **Superseded by 2026-05-21 scope decision:** This repo (`engine-uring`) now ships **chat server only** as its complete portfolio deliverable. Layer 3 (MMORTS / primitive MMO / renderer thread) has moved to a **separate future repository** (name TBD). The three-layer plan below is preserved as historical context — it explains the decision lineage, but the v1 ship plan is chat-only. See `.omc/wiki/chat-server-v1-session-and-auth-design.md` and `project-portfolio-scope` memory for the current scope.

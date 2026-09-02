@@ -1,3 +1,6 @@
+---
+status: accepted
+---
 # 2026-09-01 — Disposition of the pre-data-path review
 
 What happened to the six items in

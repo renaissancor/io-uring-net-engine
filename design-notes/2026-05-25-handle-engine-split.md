@@ -1,3 +1,9 @@
+---
+status: superseded
+superseded_by:
+  - 2026-08-21-architecture-review.md
+still_holds: the handle/engine separation itself, now spelled *_ctl / *_engine; the process-global registry became the compile-time roster (server-uring/src/roster.h)
+---
 # Handle/Engine Split Discussion — 2026-05-25
 
 Companion record to `.omc/wiki/handle-engine-split-pattern.md`.

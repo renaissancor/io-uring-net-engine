@@ -1,3 +1,10 @@
+---
+status: superseded
+superseded_by:
+  - 2026-05-21-packet-pool-review.md
+  - 2026-05-19-chat-server-data-layout.md
+still_holds: nothing binding; the build order it planned did not happen and LNX_DCHECK was deleted
+---
 # 2026-05-15 — Session log
 
 Pick-up notes for the next session. Read top-to-bottom.

@@ -1,3 +1,8 @@
+---
+status: accepted
+amended_by:
+  - 2026-09-01-architecture-review-disposition.md
+---
 # 2026-08-21 — Pre-data-path architecture review
 
 Recommendations from a Claude review of the skeleton on

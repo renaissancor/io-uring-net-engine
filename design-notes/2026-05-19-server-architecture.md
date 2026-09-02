@@ -1,3 +1,11 @@
+---
+status: superseded
+superseded_by:
+  - 2026-05-19-chat-server-data-layout.md
+  - 2026-05-23-session-account-data-model.md
+  - ../server-uring/doc/10-realtime-server-architecture.md
+still_holds: Parts 1-2 single-thread-per-channel rationale; Part 5.5 within-tick parallelism; Part 7 per-player budget and capacity ceiling
+---
 # Server Architecture Discussion — 2026-05-19
 
 Discussion record between Stephen Park and Claude (Opus 4.7) on the architectural

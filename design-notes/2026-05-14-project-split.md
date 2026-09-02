@@ -1,3 +1,9 @@
+---
+status: superseded
+superseded_by:
+  - 2026-05-17-architecture-pivot-and-monorepo-reconstructed.md
+still_holds: the library/product boundary criteria and the find_package seam
+---
 # 09 — Library / Product split
 
 > **Status: superseded, kept for the reasoning.** This document argued for

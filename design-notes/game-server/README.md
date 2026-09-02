@@ -6,6 +6,11 @@
 > and that was later rejected. The repository is gone; its history is grafted
 > into this one and its design survives here unedited.
 >
+> **The "Status" section and the build commands below describe that
+> repository as of 2026-07-04.** They are kept as provenance; the commands do
+> not run here and nothing under "Status" is current. Its scope decision is
+> recorded as [`../2026-05-21-chat-only-scope-reconstructed.md`](../2026-05-21-chat-only-scope-reconstructed.md).
+>
 > **Names in the text below are the names of the time.** `iouring-net-lib` is
 > today's [`../../engine-uring/`](../../engine-uring/); `iouring-net-server` is
 > the product this set describes, which was never built — today's

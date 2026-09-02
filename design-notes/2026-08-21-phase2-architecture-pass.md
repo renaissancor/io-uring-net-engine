@@ -1,3 +1,7 @@
+---
+status: accepted
+note: no disposition note yet; DECIDED items (state fold, renames, kernel floor 6.0) are not yet reflected in doc/10 or the engine guides
+---
 # 2026-08-21 — Phase 2 fundamental-architecture pass
 
 Decisions proposed before any content implementation (io_uring, packets,
