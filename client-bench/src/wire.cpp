@@ -4,13 +4,18 @@
 
 proto g_proto;
 
-void put_frame(std::string& out, uint16_t type, const char* data, size_t len)
+void put_header(char* out, uint16_t type, size_t len)
 {
     const auto n = static_cast<uint16_t>(
         g_proto.len_includes_header ? len + k_header_size : len);
+    std::memcpy(out,     &n,    sizeof(n));
+    std::memcpy(out + 2, &type, sizeof(type));
+}
+
+void put_frame(std::string& out, uint16_t type, const char* data, size_t len)
+{
     char hdr[k_header_size];
-    std::memcpy(hdr,     &n,    sizeof(n));
-    std::memcpy(hdr + 2, &type, sizeof(type));
+    put_header(hdr, type, len);
     out.append(hdr, sizeof(hdr));
     out.append(data, len);
 }

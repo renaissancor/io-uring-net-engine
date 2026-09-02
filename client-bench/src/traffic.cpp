@@ -61,8 +61,11 @@ static bool read_proc_cpu(int pid, uint64_t& utime, uint64_t& stime)
     return true;
 }
 
-// Consumes complete frames from c.in and records a latency sample for every
-// broadcast-chat frame that carries one of our blobs.
+// Consumes complete frames from the connection's receive slot and records a
+// latency sample for every broadcast-chat frame that carries one of our blobs.
+// Frames are parsed in place; at the end only a partial-frame remainder (under
+// one frame) is moved to the front of the slot so the next recv() lands
+// behind it. Nothing is copied per frame and nothing is allocated.
 //
 // The server broadcasts "nick: " + blob, so the blob starts after the first
 // ": ". Finding it by scan rather than by assuming a fixed nick width keeps
@@ -72,10 +75,11 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
                            uint32_t node, uint64_t& foreign)
 {
     size_t off = 0;
-    while (c.in.size() - off >= k_header_size) {
+    const char* in = c.rx;
+    while (c.rx_len - off >= k_header_size) {
         uint16_t raw = 0, type = 0;
-        std::memcpy(&raw,  c.in.data() + off, sizeof(raw));
-        std::memcpy(&type, c.in.data() + off + 2, sizeof(type));
+        std::memcpy(&raw,  in + off, sizeof(raw));
+        std::memcpy(&type, in + off + 2, sizeof(type));
 
         size_t len = 0;
         if (!payload_len(raw, len)) {
@@ -83,14 +87,14 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
             // --proto is set the wrong way round: the stream is then off by
             // four bytes per frame and nothing after this point parses.
             ++samples_bad;
-            c.in.clear();
+            c.rx_len = 0;
             return;
         }
 
-        if (c.in.size() - off < k_header_size + len)
+        if (c.rx_len - off < k_header_size + len)
             break;   // partial frame; wait for more bytes
 
-        const char* payload = c.in.data() + off + k_header_size;
+        const char* payload = in + off + k_header_size;
         off += k_header_size + len;
         ++frames_in;
 
@@ -121,7 +125,11 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
         // where something went wrong. See run_traffic().
         lat.add(recv_ts - intended);
     }
-    if (off) c.in.erase(0, off);
+    if (off) {
+        const size_t rem = c.rx_len - off;   // < one frame
+        if (rem) std::memmove(c.rx, c.rx + off, rem);
+        c.rx_len = static_cast<uint32_t>(rem);
+    }
 }
 
 // Verdict constants. They also travel in the --dump header so merge.py
@@ -231,8 +239,12 @@ void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
 
     uint64_t m = 0;              // global message index
     size_t   class_cursor = 0;
-    std::string blob;
-    blob.reserve(k_max_blob);
+    // One frame is assembled here and handed to send() directly. Before, the
+    // blob was built in one std::string, appended (header + body) into
+    // c.pending, sent from there and erased -- three copies of every message
+    // and a memmove; now it is one copy into this buffer and one into the
+    // kernel. c.pending only ever holds an unsent tail.
+    char frame[k_header_size + k_max_blob];
 
     std::printf("[traf] %zu conns x %.2f msg/s for %ds (slot=%lldns, "
                 "target %.0f msg/s)\n",
@@ -266,25 +278,32 @@ void run_traffic(int ep, std::vector<conn>& conns, std::vector<int>& live,
             // backpressured; piling on more would measure our own send queue.
             if (c.pending.size() > 64 * 1024) { ++st.backpressed; continue; }
 
-            blob.assign(k_blob_header, '\0');
-            std::memcpy(blob.data(),      &due,      sizeof(due));
-            std::memcpy(blob.data() + 8,  &c.seq,    sizeof(c.seq));
-            std::memcpy(blob.data() + 12, &cfg.node, sizeof(cfg.node));
-            std::memcpy(blob.data() + 16, &c.index,  sizeof(c.index));
+            char* blob = frame + k_header_size;
+            std::memcpy(blob,      &due,      sizeof(due));
+            std::memcpy(blob + 8,  &c.seq,    sizeof(c.seq));
+            std::memcpy(blob + 12, &cfg.node, sizeof(cfg.node));
+            std::memcpy(blob + 16, &c.index,  sizeof(c.index));
+            size_t blob_len = k_blob_header;
             if (cfg.use_corpus) {
-                blob.append(body.next());
+                const std::string& line = body.next();   // built to fit at startup
+                std::memcpy(blob + blob_len, line.data(), line.size());
+                blob_len += line.size();
             } else {
                 const size_t fill = cfg.size_mix
                     ? static_cast<size_t>(k_size_classes[class_cursor++ % 4])
                     : static_cast<size_t>(cfg.size);
-                blob.append(filler, 0, std::min(fill, k_max_blob - k_blob_header));
+                const size_t n = std::min(fill, k_max_blob - k_blob_header);
+                std::memcpy(blob + blob_len, filler.data(), n);
+                blob_len += n;
             }
             ++c.seq;
 
-            put_frame(c.pending, g_proto.id_chat, blob);
+            put_header(frame, g_proto.id_chat, blob_len);
             ++st.sent;
 
-            if (!flush_pending(fd, c)) { c.state = conn_state::dead; continue; }
+            if (!send_frame(fd, c, frame, k_header_size + blob_len)) {
+                c.state = conn_state::dead; continue;
+            }
             if (!c.pending.empty()) {
                 epoll_event ev{};
                 ev.events  = EPOLLIN | static_cast<uint32_t>(EPOLLOUT);

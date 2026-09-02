@@ -79,6 +79,10 @@ int main(int argc, char** argv)
     if (ep < 0) { std::perror("epoll_create1"); return 1; }
 
     std::vector<conn> conns(limit + 16);
+    // The receive slab is indexed by fd like the conn table. 64 KiB x 65,552
+    // is 4.3 GB of address space and, with MAP_NORESERVE and a reset-to-front
+    // parser, about a page of RSS per live connection.
+    if (!rx_slab_init(limit + 16)) return 1;
     std::vector<int>  live;
     live.reserve(static_cast<size_t>(cfg.conns));
 

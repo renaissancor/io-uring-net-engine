@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -127,8 +128,30 @@ int start_connect(const config& cfg, const sockaddr_in& dst, int index, int& out
     return fd;
 }
 
+// ------------------------------------------------------------- receive slab
 
-static char g_scratch[65536];
+static char*  g_rx_slab  = nullptr;
+static size_t g_rx_slots = 0;
+
+bool rx_slab_init(size_t slots)
+{
+    const size_t bytes = slots * k_rx_cap;
+    void* p = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) {
+        std::perror("mmap rx slab");
+        return false;
+    }
+    g_rx_slab  = static_cast<char*>(p);
+    g_rx_slots = slots;
+    return true;
+}
+
+char* rx_slab_ptr(int fd)
+{
+    if (fd < 0 || static_cast<size_t>(fd) >= g_rx_slots) return nullptr;
+    return g_rx_slab + static_cast<size_t>(fd) * k_rx_cap;
+}
 
 // Sends as much of c.pending as the kernel will take. Returns false on a hard
 // error. A partial send is normal: the tail stays in c.pending and the caller
@@ -161,12 +184,18 @@ bool flush_pending(int fd, conn& c)
 // earlier one.
 bool read_available(int fd, conn& c, uint64_t& bytes_in)
 {
+    if (!c.rx) c.rx = rx_slab_ptr(fd);
     for (;;) {
-        const ssize_t n = ::recv(fd, g_scratch, sizeof(g_scratch), 0);
+        // Straight into the slot behind whatever partial frame is buffered.
+        // consume_frames() moves that remainder to the front, so `room` is
+        // within one frame of the full k_rx_cap on every call.
+        const size_t room = k_rx_cap - c.rx_len;
+        if (room == 0) return false;   // a frame that never completes; treat as dead
+        const ssize_t n = ::recv(fd, c.rx + c.rx_len, room, 0);
         if (n > 0) {
             bytes_in += static_cast<uint64_t>(n);
-            c.in.append(g_scratch, static_cast<size_t>(n));
-            if (static_cast<size_t>(n) < sizeof(g_scratch)) return true;   // drained
+            c.rx_len += static_cast<uint32_t>(n);
+            if (static_cast<size_t>(n) < room) return true;   // drained
             continue;   // exactly filled: there may be more
         }
         if (n == 0) return false;
@@ -174,4 +203,24 @@ bool read_available(int fd, conn& c, uint64_t& bytes_in)
         if (errno == EINTR) continue;
         return false;
     }
+}
+
+bool send_frame(int fd, conn& c, const char* frame, size_t len)
+{
+    if (!c.pending.empty()) {          // keep the byte order: queue behind the tail
+        c.pending.append(frame, len);
+        return flush_pending(fd, c);
+    }
+    size_t off = 0;
+    while (off < len) {
+        const ssize_t n = ::send(fd, frame + off, len - off, MSG_NOSIGNAL);
+        if (n > 0) { off += static_cast<size_t>(n); continue; }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            c.pending.assign(frame + off, len - off);   // the unsent tail, and only that
+            return true;
+        }
+        if (errno == EINTR) continue;
+        return false;
+    }
+    return true;
 }

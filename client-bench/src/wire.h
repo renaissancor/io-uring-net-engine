@@ -69,6 +69,10 @@ constexpr size_t k_max_blob     = k_max_payload - k_prefix_slack;
 constexpr size_t k_blob_header = 20;
 
 
+// Writes the 4-byte header for a payload of `len` bytes at `out`, honouring
+// the --proto length convention. The std::string overloads below are this
+// plus an append; traffic.cpp uses it directly to build a frame in place.
+void put_header(char* out, uint16_t type, size_t len);
 void put_frame(std::string& out, uint16_t type, const char* data, size_t len);
 void put_frame(std::string& out, uint16_t type, const std::string& payload);
 bool payload_len(uint16_t raw, size_t& out);

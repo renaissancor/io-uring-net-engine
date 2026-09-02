@@ -138,7 +138,7 @@ int run_connect(int ep, const config& cfg, const sockaddr_in& dst,
                 }
                 if (alive && (evs[i].events & EPOLLIN)) {
                     alive = read_available(fd, c, junk);
-                    c.in.clear();   // join notices; nothing to measure yet
+                    c.rx_len = 0;   // join notices; nothing to measure yet
                 }
                 if (!alive || (evs[i].events & (EPOLLERR | EPOLLHUP))) {
                     --established;
@@ -161,6 +161,6 @@ int run_connect(int ep, const config& cfg, const sockaddr_in& dst,
 
     // Discard whatever the join notices left buffered, so the traffic phase
     // starts from a clean parse position.
-    for (int fd : live) conns[fd].in.clear();
+    for (int fd : live) conns[fd].rx_len = 0;
     return established;
 }
