@@ -17,6 +17,7 @@ numbers now live where they belong.
 | [`2026-09-01-where-the-epoll-server-saturates.md`](2026-09-01-where-the-epoll-server-saturates.md) | the ceiling reached at last — 1.78 GB/s byte-bound, and what the server does past it (it sheds clients, and the instrument said `[ OK ]`) |
 | [`2026-09-02-stl-to-sds-the-measured-delta.md`](2026-09-02-stl-to-sds-the-measured-delta.md) | STL to `sds::` on both programs: the client's collapse was two `recv()` per socket, not its containers; the `sds::` control cuts server user-space at 8–10M and is lossless at the 1024 B rung where the STL server sheds |
 | [`2026-09-03-the-tick-budget-stage-a.md`](2026-09-03-the-tick-budget-stage-a.md) | the epoll server under a 30 Hz tick: I/O is ~16 µs per active connection per tick and nine tenths of it is the ten `send()` of the chat's fan-out; coalescing cuts it 5×; the working-set knob does not couple into the I/O term (P1 falsified); the overrun boundary is `N × L ≈ period` |
+| [`2026-09-03-the-tick-budget-stage-c.md`](2026-09-03-the-tick-budget-stage-c.md) | one send per player per tick, against stage A: I/O 16 → ~3 µs per active connection per tick, 3,000 players leave saturation (102 → 49 % CPU), wakes still ≈ N_a, fan-out gate intact; at 10k the tick's output burst is a new cost and the row gets worse, not better |
 | [`data/`](data/) | per-cell CSVs behind the tables, when a note has more rows than its text |
 
 Method and instrument: [`../client-bench/`](../client-bench/). The verdict
