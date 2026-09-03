@@ -3,6 +3,7 @@ status: proposed
 amended_by:
   - 2026-09-03-working-set-knob-for-the-tick-budget-experiment.md
   - 2026-09-03-stage-c-tick-coalesced-delivery.md
+  - 2026-09-03-stage-b-the-io-uring-data-path.md
 note: a hypothesis; becomes accepted or moved when the tick-budget experiment in section 7 has run. 2026-09-03 adds a working-set knob to § 7 and stages the epoll half first
 ---
 # 2026-09-02 — Where io_uring becomes meaningful: the hypothesis, written before the data path exists
