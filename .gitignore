@@ -24,9 +24,7 @@ compile_commands.json
 CMakeUserPresets.json
 
 # IDE / editors
-# NOTE: .idea/ is deliberately NOT ignored here — client-bench/ and
-# server-epoll/ commit their JetBrains project files. engine-uring/
-# ignores .idea/ in its own .gitignore; keep that choice per subproject.
+.idea/
 .vscode/
 .zed/
 .helix/
