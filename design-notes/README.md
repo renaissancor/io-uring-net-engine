@@ -70,6 +70,7 @@ not an argument anyone had on a particular afternoon.
 | [`2026-09-02`](2026-09-02-design-notes-drift-review.md) | **Accepted** — Drift review — 67 cited findings grouped into six root causes, the purpose statement that closes the first, the recovered sources for the second, and the one convention decision still open |
 | [`2026-09-02`](2026-09-02-control-group-on-engine-primitives.md) | **Accepted** — The control group on the engine's primitives — `server-sds` through the `find_package` seam, the client optimised on the existing binary with the judge as gate, syscall shape held equal so the delta is data structures, and the layout lesson the first measurement forced |
 | [`2026-09-03`](2026-09-03-working-set-knob-for-the-tick-budget-experiment.md) | **Accepted** — A working-set knob for the tick-budget experiment — content accumulates as memory, not only cycles; the knob lets the sweep falsify "logic term identical by construction"; predictions P1–P3; stage A is the epoll half with chat semantics untouched |
+| [`2026-09-03`](2026-09-03-stage-c-tick-coalesced-delivery.md) | **Accepted** — Stage C: tick-coalesced delivery — one send per player per tick, coalesced rather than latest-wins so the fan-out gate keeps its meaning; predictions P4–P7 from stage A's constants |
 
 ## `game-server/`
 
