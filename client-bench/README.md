@@ -107,7 +107,7 @@ fast with nothing in the output to say so.
 
 `loadgen` and `merge.py` exit **3** when the verdict is `[VOID]` — the run
 produced numbers and they do not describe the server. `[ OK ]` and `[WARN]`
-both exit 0. Three things void a run, checked in this order:
+both exit 0. Four things void a run, checked in this order:
 
 1. **Fan-out drift** past ±5% of `--per-room`. First, because the offered load
    is then not the requested one. Orphaned `loadgen` processes are the usual
@@ -119,7 +119,15 @@ both exit 0. Three things void a run, checked in this order:
    cannot catch this: a closed connection leaves both sides of `frames_in/sent`
    at once, so the ratio barely moves. A run that lost 1,260 of 10,008
    connections measured fan-out 9.87, comfortably inside the band.
-3. **Self-lag** too large against latency p99.
+3. **Latency p99 past the histogram's 1 s range.** The self-lag ratio below
+   is then a comparison against the instrument's ceiling rather than a
+   measurement, and cannot fail for any self-lag under 200 ms. An 8M/12-node
+   row on 2026-09-02 printed `[ OK ]` with self-lag p99 25 ms and p90 latency
+   beyond 1 s, and was read as a clean rung; deliveries queueing for seconds
+   are a server past its ceiling in a run too short to show the shed. Rows
+   from before 2026-09-03 carry a `+` on the censored percentile instead of
+   this verdict.
+4. **Self-lag** too large against latency p99.
 
 `--server-pid` reports the server's CPU over the traffic window:
 
@@ -289,6 +297,7 @@ bare ratio test misfired:
 | `[ OK ]` | `lag99 * 5 <= lat99` | the client was not the bottleneck |
 | `[WARN]` | ratio fails but `lag99 < 1 ms` | usable; read server p99 as `>= lat99 - lag99` |
 | `[VOID]` | ratio fails and `lag99 >= 1 ms` | this run measured the client |
+| `[VOID]` | `lat99` is past the 1 s range | the ratio has no measurement to test against; the server queued for seconds |
 
 Self-lag inflates measured latency roughly additively, so what decides
 whether a run is usable is whether subtracting it would change the

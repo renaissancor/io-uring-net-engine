@@ -527,9 +527,9 @@ bool report(const config& cfg, const traffic_stats& st)
     // the honest report is the corrected lower bound, not a thrown-away
     // run. Above the floor the correction is load-bearing and the run
     // really does describe the client.
-    bool a = false, b = false;
-    const int64_t lat99 = st.latency.pct(0.99, a);
-    const int64_t lag99 = st.self_lag.pct(0.99, b);
+    bool lat_beyond = false, lag_beyond = false;
+    const int64_t lat99 = st.latency.pct(0.99, lat_beyond);
+    const int64_t lag99 = st.self_lag.pct(0.99, lag_beyond);
 
     // Fan-out is checked BEFORE self-lag, and it voids the run outright.
     //
@@ -600,8 +600,36 @@ bool report(const config& cfg, const traffic_stats& st)
         return false;
     }
 
+    // A censored latency p99 is checked before the ratio, because the ratio
+    // cannot be evaluated against it. pct() returns the 1s range limit when
+    // the p99 falls inside the overflow count, so lat99 is then a floor and
+    // `lag99 * 5 > lat99` compares self-lag against the instrument's ceiling
+    // instead of against a measurement: any self-lag under 200ms passes. The
+    // 2026-09-02 8M/12-node row did exactly that — self-lag p99 25ms, p90
+    // latency past 1s, "[ OK ] ... the client was not the bottleneck". True
+    // as written, and read as a clean rung. It was not one: deliveries that
+    // queue for seconds describe a server past its ceiling in a run too short
+    // to show the shed, and a p99 the histogram cannot express is not a
+    // number the pair rule can compare. Same reasoning as connection loss
+    // above — a fact nothing acts on is not a gate — so it voids.
     if (st.latency.total == 0) {
         std::printf("[VOID] no latency samples\n");
+        return false;
+    } else if (lat_beyond) {
+        std::printf("[VOID] latency p99 is past the 1s histogram range "
+                    "(self-lag p99 %.3fms) — the self-lag ratio would be "
+                    "tested against the instrument's ceiling, not a "
+                    "measurement, so it has not been applied. Deliveries "
+                    "queued for seconds%s; a rung whose p99 is off the "
+                    "scale is past the server's ceiling whether or not it "
+                    "closed anything. Lower --rate.\n",
+                    static_cast<double>(lag99) / 1e6,
+                    // lat99 is the range limit here, so this is the ratio
+                    // test against the ceiling: failing even that means the
+                    // client was late in its own right.
+                    lag99 * k_lag_ratio > lat99
+                        ? " (and this process was itself late; read self-lag above)"
+                        : " and not on this side");
         return false;
     } else if (lag99 * k_lag_ratio > lat99 && lag99 >= k_lag_floor_ns) {
         std::printf("[VOID] self-lag p99 (%.3fms) is not small against "

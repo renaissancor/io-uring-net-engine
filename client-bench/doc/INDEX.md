@@ -98,7 +98,9 @@ turned out wrong are recorded dead so nobody re-tests them.
   tracking them by hand. What still has to stay in step is the *shape* of the
   verdict expression, and one asymmetry is deliberate: `merge.py`'s
   `or lag_beyond` term compensates for its `pct()` returning a floor for
-  beyond-range percentiles where the C++ `pct()` returns the range limit.
+  beyond-range percentiles where the C++ `pct()` returns the range limit. The
+  same asymmetry is why `merge.py` spells out the 1 s range limit when a
+  censored latency p99 voids the run: the C++ side has it in `lat99` already.
 - **Verdict exit codes** (`traffic.cpp`, `merge.py`, `fleet.py`) — `[VOID]`
   leaves through exit status 3 as well as stdout, because a verdict nothing can
   act on without scraping prose is not a gate. `[ OK ]` and `[WARN]` are both 0:

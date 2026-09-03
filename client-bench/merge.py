@@ -255,8 +255,31 @@ def main():
               f"server is shedding, this rate is past its ceiling.")
         return 3
 
+    # A censored p99 voids before the ratio is consulted, as in traffic.cpp:
+    # against a floor the ratio compares self-lag with the histogram's range,
+    # not with a measurement, and cannot fail for any self-lag under 200 ms.
+    # The 2026-09-02 8M/12-node row printed [ OK ] with self-lag p99 25 ms and
+    # p90 latency past 1 s. Our pct() returns the highest occupied bucket for
+    # a beyond-range p99, so the printed value is not even the 1 s limit; the
+    # flag is what carries the fact.
     if lat.total == 0:
         print("[VOID] no latency samples")
+        return 3
+    elif lat_beyond:
+        # The ratio test against the range limit itself (the C++ side gets
+        # this for free, since its pct() returns the limit): failing even that
+        # means the fleet was late in its own right.
+        range_ns = 1_000_000_000
+        side = (" (and the fleet was itself late; read self-lag above)"
+                if lag_beyond or lag99 * lag_ratio > range_ns
+                else " and not on this side")
+        print(f"[VOID] fleet latency p99 is past the 1s histogram range "
+              f"(self-lag p99 {lag99/1e6:.3f}ms{'+' if lag_beyond else ''}) — "
+              f"the self-lag ratio would be tested against the instrument's "
+              f"ceiling, not a measurement, so it has not been applied. "
+              f"Deliveries queued for seconds{side}; a rung whose p99 is off "
+              f"the scale is past the server's ceiling whether or not it "
+              f"closed anything. Lower --rate.")
         return 3
     elif lag99 * lag_ratio > lat99 and (lag99 >= lag_floor or lag_beyond):
         print(f"[VOID] fleet self-lag p99 ({lag99/1e6:.3f}ms) is not small "
@@ -272,9 +295,6 @@ def main():
     else:
         print(f"[ OK ] fleet self-lag p99 ({lag99/1e6:.3f}ms) is small against "
               f"latency p99 ({lat99/1e6:.3f}ms); no node was the bottleneck")
-    if lat_beyond:
-        print("       latency p99 is past the 1s histogram range; the printed "
-              "value is a floor, not a measurement")
     return 0
 
 

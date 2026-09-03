@@ -21,7 +21,7 @@
 | 5 | At 1024 B the `sds::` server is lossless at **2.20M deliveries/s (2.27 GB/s)** where the STL server sheds from 1.70M — the "byte-bound, no change" prediction was wrong in the good direction | New |
 | 6 | The short-read stop that halved the client's syscalls makes the **server slower** (p50 +35 % at 10M): on a backlogged server it defers bytes by a sweep instead of saving a call | New; prediction failed |
 | 7 | **Run-to-run variance on this box is of the order of the deltas.** The same STL 3M row measured p50 18.6–20.6 ms and p99 39–204 ms across the day; nothing under ~15 % is claimed from a single pair | Method |
-| 8 | A run can print `[ OK ]` with self-lag p99 25 ms when latency p99 is censored at 1 s — the ratio gate is blind above the histogram's range | Instrument; not fixed here |
+| 8 | A run can print `[ OK ]` with self-lag p99 25 ms when latency p99 is censored at 1 s — the ratio gate is blind above the histogram's range | Instrument; not fixed here (fixed 2026-09-03, see § 6) |
 
 Same box and caveats as [`2026-08-30`](2026-08-30-what-limits-the-server.md):
 one vCPU of an i5-13600K under WSL2, loopback, `CHAT_FLUSH=batch`,
@@ -296,7 +296,13 @@ a knob because the row is worth having; not the default.
   histogram's ceiling; the 8M/12-node base row printed `[ OK ]` with self-lag
   p99 25 ms and p90 latency beyond 1 s. A censored `lat99` should void the
   ratio test or at least say so. Recorded here; the instrument is unchanged in
-  this note so its rows stay comparable.
+  this note so its rows stay comparable. *Closed 2026-09-03: a censored
+  latency p99 now voids in both `loadgen` and `merge.py`, checked before the
+  ratio. Under the current instrument the § 4 sds 12M row voids: zero closes
+  and 99.7 % delivered, but a p99 the histogram cannot express. The sds 64 B
+  ceiling therefore reads lossless at 10M (§ 3.1), off the latency scale at
+  12M, shedding at 14M — still one rung above the STL server, but the "+20 %"
+  is a bracket, not a lossless rung.*
 
 ## Rationale links
 

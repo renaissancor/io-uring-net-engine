@@ -45,7 +45,7 @@ a 3-process fleet:
 
 | | |
 |---|---|
-| **Ceiling** | **byte-bound at ≈1.78 GB/s** — 1.70M deliveries/s at 1024 B, 3.50M at 512 B. At 64 B, **observed on 2026-09-02**: lossless at 10M deliveries/s, shedding at 12M (the fitted 13.4M was high). The same server rebuilt on the engine's `sds::` primitives (`server-sds`) is lossless at 12M / 2.20M at 1024 B — +20 % and +29 %, [`result-notes/2026-09-02`](result-notes/2026-09-02-stl-to-sds-the-measured-delta.md) |
+| **Ceiling** | **byte-bound at ≈1.78 GB/s** — 1.70M deliveries/s at 1024 B, 3.50M at 512 B. At 64 B, **observed on 2026-09-02**: lossless at 10M deliveries/s, shedding at 12M (the fitted 13.4M was high). The same server rebuilt on the engine's `sds::` primitives (`server-sds`) carries 12M with zero closes but latency past the instrument's 1 s range (a rung the gate voids since 2026-09-03) and sheds at 14M; 2.20M lossless at 1024 B — one rung higher at 64 B, +29 % at 1024 B, [`result-notes/2026-09-02`](result-notes/2026-09-02-stl-to-sds-the-measured-delta.md) |
 | Latency below the ceiling | set by the **sweep period**, i.e. connection count, not by load — sub-millisecond p50 at 10k connections up to the client's limit |
 | CPU | 100% of one core from 3M to 10M deliveries/s — **100% is not a saturation signal** here |
 | Connection scale | 40k established, 0 attrition — but only across 4 source IPs |
