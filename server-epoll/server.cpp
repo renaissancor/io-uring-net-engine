@@ -31,6 +31,11 @@
 #include <unordered_set>
 #include <vector>
 
+// The tick-budget experiment's logic term and instrument. Every entry point
+// is a no-op unless CHAT_TICK_HZ is set, so the loop that produced the rows
+// in result-notes/ is unchanged when it is not. See the header.
+#include "tick_logic.h"
+
 // ---------------------------------------------------------------- protocol
 
 // 4-byte header, then payload. Little-endian; we assume x86 and do not swap,
@@ -270,6 +275,7 @@ static void handle_packet(conn& c, uint16_t type, std::string_view payload) {
             queue_send(c, s_notice, "join a room first");
             break;
         }
+        tick::on_msg(c.fd);                    // the experiment's c_msg term
         std::string line = c.nick + ": ";
         line.append(payload);
         broadcast(c.room, s_chat, line, -1);   // -1: echo back to sender too
@@ -427,6 +433,7 @@ static void on_accept(int listen_fd) {
         conn c;
         c.fd = fd;
         g_conns.emplace(fd, std::move(c));
+        tick::session_add(fd);
 
         if (!g_quiet) {
             char ip[INET_ADDRSTRLEN]{};
@@ -469,6 +476,7 @@ static void reap_doomed() {
         epoll_ctl(g_ep, EPOLL_CTL_DEL, fd, nullptr);
         ::close(fd);
         g_conns.erase(it);
+        tick::session_remove(fd);
         std::printf("[disc] fd=%d closed (total %zu)\n", fd, g_conns.size());
     }
     g_doomed.clear();
@@ -545,6 +553,8 @@ int main(int argc, char** argv) {
                 g_batch_flush ? "batch (end of epoll batch)"
                               : "immediate (one send per delivery)");
 
+    if (!tick::init(g_max_conns)) return 1;
+
     // The connection cap is meaningless without the fd budget behind it: the
     // soft RLIMIT_NOFILE defaults to 1024, so a 10k cap without this just
     // reaches LESSON 6's EMFILE path 9k connections early. Raising the soft
@@ -594,13 +604,26 @@ int main(int argc, char** argv) {
     bool running = true;
 
     while (running) {
-        int n = ::epoll_wait(g_ep, events, 256, -1);
+        // With a tick the wait is bounded by the next deadline; epoll_pwait2
+        // takes the timeout in nanoseconds where epoll_wait rounds to
+        // milliseconds, which at a 33 ms period is 3 % of jitter. Without a
+        // tick this is the original -1 block through epoll_wait.
+        int n;
+        const int64_t to = tick::timeout_ns();
+        if (to < 0) {
+            n = ::epoll_wait(g_ep, events, 256, -1);
+        } else {
+            timespec ts{static_cast<time_t>(to / 1000000000LL),
+                        static_cast<long>(to % 1000000000LL)};
+            n = ::epoll_pwait2(g_ep, events, 256, &ts, nullptr);
+        }
         if (n < 0) {
             if (errno == EINTR) continue;
             std::perror("epoll_wait");
             break;
         }
 
+        tick::drain_begin();
         for (int i = 0; i < n; ++i) {
             const int fd = events[i].data.fd;
             const uint32_t what = events[i].events;
@@ -629,6 +652,12 @@ int main(int argc, char** argv) {
             if (what & EPOLLOUT) flush_send(c);
             if (!c.closing && (what & EPOLLIN)) on_readable(c);
         }
+        tick::drain_end();
+
+        // The tick runs after the drain and before the flush, so the sends it
+        // would have produced (none yet; the tick only touches its own
+        // arena in stage A) leave in the same flush pass as the batch's.
+        tick::maybe_tick();
 
         // LESSON 8 — the flush/reap ordering.
         // Order matters. The first flush sends everything this batch queued
@@ -636,6 +665,7 @@ int main(int argc, char** argv) {
         // those up, and its "X left" broadcasts queue fresh bytes onto the
         // survivors — hence the second flush, without which those notices
         // would sit in `out` with no EPOLLOUT armed and never leave.
+        tick::flush_begin();
         if (g_batch_flush) {
             flush_dirty();
             reap_doomed();
@@ -643,7 +673,10 @@ int main(int argc, char** argv) {
         } else {
             reap_doomed();
         }
+        tick::flush_end();
     }
+
+    tick::report();
 
     for (auto& [fd, c] : g_conns) ::close(fd);
     g_conns.clear();

@@ -10,12 +10,12 @@ SAN      ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 # convention next door, so the obvious command was the wrong one.
 all: server
 
-server: server.cpp
+server: server.cpp tick_logic.h
 	$(CXX) $(CXXFLAGS) -DNDEBUG -o $@ $<
 
 # Correctness build. Use it at a small --conns to check behaviour, then
 # rebuild with `make` before recording any number.
-asan: server.cpp
+asan: server.cpp tick_logic.h
 	$(CXX) -std=c++20 -g -O1 -Wall -Wextra -Wpedantic $(SAN) -o server-asan $<
 
 run: server

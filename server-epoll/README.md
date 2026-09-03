@@ -119,6 +119,37 @@ Three environment knobs exist for it:
   it makes the server look slow when the measurement is really measuring
   `printf`.
 
+### The tick-budget experiment (`CHAT_TICK_HZ`)
+
+`tick_logic.h` gives the server a synthetic game tick and the instrument that
+measures it. Unset, every hook is a no-op and the loop is the one that
+produced every row in `result-notes/`. Set, `epoll_wait` becomes
+`epoll_pwait2` bounded by the next deadline, and at each deadline the tick
+walks every live session's state block and spins the configured logic cost.
+Chat semantics are unchanged: the tick is *added* work on a timer, so the
+load generator and its verdict still gate the row. The design is
+[`design-notes/2026-09-02`](../design-notes/2026-09-02-where-io-uring-becomes-meaningful.md)
+§ 7 as amended by
+[`2026-09-03`](../design-notes/2026-09-03-working-set-knob-for-the-tick-budget-experiment.md).
+
+| knob | meaning |
+|---|---|
+| `CHAT_TICK_HZ` | tick rate; `30` for the experiment, unset for the baseline |
+| `LOGIC_NS_PER_ENTITY_TICK` | spun per live session per tick — the 10–100 µs per player budget |
+| `LOGIC_NS_PER_MSG` | spun per inbound chat frame — the handler cost |
+| `LOGIC_BYTES_PER_ENTITY` | each session's state block, a multiple of 64; the tick and the handler read-modify-write it one cache line at a time. 64 isolates the spin knobs; 4096 at 10k sessions streams 40 MB per tick from DRAM |
+| `CHAT_TICK_DUMP` | write the raw per-period histograms here at shutdown |
+
+At shutdown the server prints, per tick period: time in the I/O drain, in
+the tick function, and in the flush passes, plus the number of `epoll_wait`
+returns per period and the overrun count. Those are the primary numbers of
+the experiment; the client cannot see them. A tick that ends past deadline
+plus period counts as an overrun and the deadline is reset from now rather
+than caught up, so the drain is never starved by back-to-back ticks. The
+header is shared unchanged with every server that joins the comparison,
+which is why it uses no STL and no engine headers.
+`client-bench/tools/ticksweep.py` runs the stage A grid.
+
 ### The result worth carrying forward
 
 | | `immediate` | `batch` |
