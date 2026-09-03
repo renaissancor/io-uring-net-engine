@@ -1,6 +1,6 @@
 ---
 status: accepted
-note: amends 2026-09-02 § 7 — adds a working-set knob and the staging for the epoll side; the hypothesis note keeps its status until the experiment has run
+note: amends 2026-09-02 § 7 — adds a working-set knob and the staging for the epoll side. Stage A ran the same day (result-notes/2026-09-03) — P1 falsified on this box, P2/P3 wait on the io_uring side
 ---
 # 2026-09-03 — A working-set knob for the tick-budget experiment: content accumulates as memory, not only as cycles
 
