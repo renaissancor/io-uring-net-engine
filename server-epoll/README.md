@@ -139,6 +139,7 @@ load generator and its verdict still gate the row. The design is
 | `LOGIC_NS_PER_MSG` | spun per inbound chat frame — the handler cost |
 | `LOGIC_BYTES_PER_ENTITY` | each session's state block, a multiple of 64; the tick and the handler read-modify-write it one cache line at a time. 64 isolates the spin knobs; 4096 at 10k sessions streams 40 MB per tick from DRAM |
 | `CHAT_TICK_DUMP` | write the raw per-period histograms here at shutdown |
+| `CHAT_TICK_MODE` | `immediate` (default): a chat frame is broadcast in the batch it arrives in, as always. `coalesce`: it is appended to its room's tick buffer and every member gets the buffer as one `S_TICK` frame at the tick — one `send()` per player per tick instead of one per recipient per input. Stage C, [`design-notes/2026-09-03-stage-c`](../design-notes/2026-09-03-stage-c-tick-coalesced-delivery.md) |
 
 At shutdown the server prints, per tick period: time in the I/O drain, in
 the tick function, and in the flush passes, plus the number of `epoll_wait`
@@ -197,6 +198,7 @@ built; that spec is kept as dated deliberation under
 | 3 `C_CHAT` | → | chat to current room |
 | 100 `S_NOTICE` | ← | system message |
 | 101 `S_CHAT` | ← | `nick: text` |
+| 102 `S_TICK` | ← | stage C only (`CHAT_TICK_MODE=coalesce`): everything the room said during one tick, as `[u16 len][nick: text]` entries; one frame per member per tick, capped at 32 KiB |
 
 ## The lessons
 

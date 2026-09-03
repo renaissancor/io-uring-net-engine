@@ -292,7 +292,10 @@ inline void run_tick() {
 // The loop calls these in order each iteration:
 //   timeout_ns()                   before the wait
 //   drain_begin() / drain_end()    around event processing
-//   maybe_tick()                   after processing, before the flush pass
+//   maybe_tick(on_tick)            after processing, before the flush pass;
+//                                  on_tick, if given, runs inside the timed
+//                                  tick phase after the logic walk — the
+//                                  server's "build snapshots" step, § 7.1
 //   flush_begin() / flush_end()    around the flush/reap tail
 // All return immediately when disabled.
 
@@ -308,11 +311,12 @@ inline void drain_end()   { if (g.enabled) g.drain_acc += now_ns() - t_mark; }
 inline void flush_begin() { if (g.enabled) t_mark = now_ns(); }
 inline void flush_end()   { if (g.enabled) g.flush_acc += now_ns() - t_mark; }
 
-inline void maybe_tick() {
+inline void maybe_tick(void (*on_tick)() = nullptr) {
     if (!g.enabled) return;
     const int64_t t0 = now_ns();
     if (t0 < g.deadline) return;
     run_tick();
+    if (on_tick) on_tick();
     const int64_t t1 = now_ns();
     ++g.ticks;
     g.h_drain.add(g.drain_acc);

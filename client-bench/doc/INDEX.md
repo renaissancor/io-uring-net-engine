@@ -47,7 +47,7 @@ a run that dies in one tells you nothing about the other.
 | unit | owns | fails on |
 |---|---|---|
 | `src/connect.h/.cpp` | establish N connections, shard into rooms | ephemeral port exhaustion (`EADDRNOTAVAIL` at 28,232 per source IP), `RLIMIT_NOFILE`, listen backlog, and O(N²) join notices if rooms are too large |
-| `src/traffic.h/.cpp` | open-loop send schedule, latency + self-lag sampling, the verdict, the dump, and the only server-side observation (`--server-pid`) | coordinated omission in **both** directions, and the verdict thresholds. The largest file and the one to read most carefully. A green self-lag verdict means the client was not the bottleneck; it has never meant the *server* was, which is what `--server-pid` is for. |
+| `src/traffic.h/.cpp` | open-loop send schedule, latency + self-lag sampling, the verdict, the dump, and the only server-side observation (`--server-pid`) | coordinated omission in **both** directions, and the verdict thresholds. The largest file and the one to read most carefully. A green self-lag verdict means the client was not the bottleneck; it has never meant the *server* was, which is what `--server-pid` is for. Type-102 tick frames are containers: each entry is one delivery, the frame is not. |
 
 ### Tier 3 — driver
 

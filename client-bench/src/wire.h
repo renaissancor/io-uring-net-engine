@@ -38,6 +38,7 @@ struct proto {
     uint16_t id_chat             = 3;
     uint16_t id_notice           = 100;
     uint16_t id_chat_out         = 101;
+    uint16_t id_tick_out         = 102;   // stage C: [u16 len][chat payload]... per tick
 };
 
 // The IDs above are server-epoll's. The io_uring product (server-uring) will

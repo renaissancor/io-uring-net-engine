@@ -85,7 +85,7 @@ def parse_fleet(log):
         out["lat_p50"], out["lat_p90"], out["lat_p99"] = m.groups()
     m = re.search(r"^\[(VOID|WARN| OK )\]", log, re.M)
     out["verdict"] = m.group(1).strip() if m else "none"
-    m = re.search(r"self-lag p99 \(([0-9.]+)ms", log)
+    m = re.search(r"self-lag p99 \(?([0-9.]+)ms", log)
     out["lag_p99"] = m.group(1) if m else ""
     m = re.search(r"server cpu[^0-9]*([0-9.]+)%", log, re.I)
     out["server_cpu"] = m.group(1) if m else ""
@@ -103,6 +103,10 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--only", default=None,
                     help="comma list of N:L:W cells to run instead of the grid")
+    ap.add_argument("--only-w64", action="store_true",
+                    help="run only the W = 64 cells of the grid")
+    ap.add_argument("--mode", choices=("immediate", "coalesce"), default="immediate",
+                    help="CHAT_TICK_MODE: stage A (immediate) or stage C (coalesce)")
     args = ap.parse_args()
 
     if subprocess.run(["pgrep", "-x", "loadgen"], capture_output=True).returncode == 0:
@@ -112,8 +116,10 @@ def main():
     cells = grid()
     if args.only:
         cells = [tuple(int(x) for x in c.split(":")) for c in args.only.split(",")]
+    if args.only_w64:
+        cells = [c for c in cells if c[2] == 64]
 
-    fields = ["pass", "N", "L_us", "W", "iters_per_ns", "ticks", "overruns", "overrun_pct",
+    fields = ["mode", "pass", "N", "L_us", "W", "iters_per_ns", "ticks", "overruns", "overrun_pct",
               "drain_p50", "drain_p90", "drain_p99", "tick_p50", "tick_p90", "tick_p99",
               "flush_p50", "flush_p90", "flush_p99", "wakes_p50", "wakes_p90", "wakes_p99",
               "closes", "achieved", "lat_p50", "lat_p90", "lat_p99", "lag_p99",
@@ -126,12 +132,13 @@ def main():
             wr.writeheader()
         for p in range(1, args.passes + 1):
             for (n, l_us, w) in cells:
-                tag = f"p{p}-N{n}-L{l_us}-W{w}"
+                tag = f"{args.mode}-p{p}-N{n}-L{l_us}-W{w}"
                 nodes, per_node = FLEET_SHAPE[n]
                 env = dict(os.environ,
                            CHAT_FLUSH="batch", CHAT_QUIET="1",
                            CHAT_MAX_CONNS=str(n + 200),
                            CHAT_TICK_HZ=str(args.hz),
+                           CHAT_TICK_MODE=args.mode,
                            LOGIC_NS_PER_ENTITY_TICK=str(l_us * 1000),
                            LOGIC_BYTES_PER_ENTITY=str(w),
                            CHAT_TICK_DUMP=os.path.join(args.out, f"{tag}.tickdump"))
@@ -158,7 +165,7 @@ def main():
                 except subprocess.TimeoutExpired:
                     srv.kill()
                     print(f"[{tag}] server did not stop on SIGTERM; killed")
-                row = {"pass": p, "N": n, "L_us": l_us, "W": w}
+                row = {"mode": args.mode, "pass": p, "N": n, "L_us": l_us, "W": w}
                 row.update(parse_server(open(slog).read()))
                 row.update(parse_fleet(open(flog).read()))
                 wr.writerow({k: row.get(k, "") for k in fields})

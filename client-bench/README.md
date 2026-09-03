@@ -264,6 +264,15 @@ rather than guessing, because an unrecognised ID closes the session there and
 a wrong guess would present as a connection failure rather than as a protocol
 error.
 
+**The tick frame (type 102).** Under `CHAT_TICK_MODE=coalesce` the study
+server sends each member one frame per tick holding every chat payload the
+room produced in that period, as `[u16 len][payload]` entries. The client
+parses each entry exactly as it parses a type-101 payload and counts each as
+one delivery, so fan-out keeps its definition. The latency of those samples
+includes the wait for the tick — p50 near half a period — and **is not
+comparable with any per-message-broadcast row**; the server's own per-tick
+phase histogram is the primary instrument for that mode.
+
 ## What it measures, and the two things that make the numbers real
 
 **Open-loop scheduling.** Every connection has a fixed send deadline

@@ -55,6 +55,7 @@ enum : uint16_t {
 
     s_notice   = 100,
     s_chat     = 101,
+    s_tick     = 102,   // stage C: one frame per member per tick, [u16 len][chat payload]...
 };
 
 static constexpr size_t k_header_size  = sizeof(wire_header);
@@ -121,6 +122,21 @@ static std::unordered_map<std::string, std::unordered_set<int>>   g_rooms;
 static std::vector<int>                                           g_doomed;
 static std::vector<int>                                           g_dirty;
 
+// Stage C — tick-coalesced delivery (design-notes/2026-09-03-stage-c-*).
+// CHAT_TICK_MODE=coalesce: a chat frame is appended to its room's tick buffer
+// instead of being broadcast in the batch it arrived in; at the tick every
+// member gets the whole buffer as ONE s_tick frame. One send() per player per
+// tick instead of F per input. Coalesced, not latest-wins, so every delivery
+// still happens exactly once and the client's fan-out gate keeps its meaning.
+static bool                                          g_coalesce = false;
+static std::unordered_map<std::string, std::string>  g_tick_buf;      // room -> [u16 len][payload]...
+static uint64_t                                      g_tick_frames = 0;
+static uint64_t                                      g_tick_dropped = 0;
+// The client's receive slot is 64 KiB and a u16 length ends at 65,535; a room
+// that says more than this in one tick drops the input and counts it, and the
+// fan-out gate voids the run, which is the right verdict for that room.
+static constexpr size_t k_tick_cap = 32 * 1024;
+
 // ------------------------------------------------------------------ helpers
 
 // Every fd here is created non-blocking at birth (SOCK_NONBLOCK on socket()
@@ -172,6 +188,21 @@ static void queue_send(conn& c, uint16_t type, std::string_view payload) {
     }
 
     wire_header h{static_cast<uint16_t>(payload.size()), type};
+    c.out.append(reinterpret_cast<const char*>(&h), k_header_size);
+    c.out.append(payload);
+}
+
+// The tick frame is the one payload allowed past k_max_payload; it has its
+// own cap (k_tick_cap) and the same backpressure rule.
+static void queue_tick_frame(conn& c, std::string_view payload) {
+    if (c.closing) return;
+    if (c.out.size() + k_header_size + payload.size() > k_send_cap) {
+        std::printf("[drop] fd=%d send buffer over cap (%zu B), closing\n",
+                    c.fd, c.out.size());
+        doom(c);
+        return;
+    }
+    wire_header h{static_cast<uint16_t>(payload.size()), s_tick};
     c.out.append(reinterpret_cast<const char*>(&h), k_header_size);
     c.out.append(payload);
 }
@@ -232,9 +263,39 @@ static void leave_room(conn& c) {
     auto it = g_rooms.find(c.room);
     if (it != g_rooms.end()) {
         it->second.erase(c.fd);
-        if (it->second.empty()) g_rooms.erase(it);
+        if (it->second.empty()) {
+            g_rooms.erase(it);
+            if (g_coalesce) g_tick_buf.erase(c.room);   // nobody left to receive it
+        }
     }
     c.room.clear();
+}
+
+// Stage C, the tick side: every room's buffer goes to every member as one
+// frame. Runs inside the timed tick phase (tick::maybe_tick's callback), so
+// its cost lands in the tick histogram, where § 7.1 puts "build snapshots";
+// the send() calls themselves happen in the flush pass that follows.
+static void flush_tick_rooms() {
+    for (auto& [room, buf] : g_tick_buf) {
+        if (buf.empty()) continue;
+        auto it = g_rooms.find(room);
+        if (it != g_rooms.end()) {
+            for (int fd : it->second) {
+                auto cit = g_conns.find(fd);
+                if (cit == g_conns.end() || cit->second.closing) continue;
+                conn& m = cit->second;
+                queue_tick_frame(m, buf);
+                ++g_tick_frames;
+                if (!g_batch_flush)
+                    flush_send(m);
+                else if (!m.dirty && !m.out.empty()) {
+                    m.dirty = true;
+                    g_dirty.push_back(fd);
+                }
+            }
+        }
+        buf.clear();
+    }
 }
 
 // --------------------------------------------------------------- packet work
@@ -278,6 +339,16 @@ static void handle_packet(conn& c, uint16_t type, std::string_view payload) {
         tick::on_msg(c.fd);                    // the experiment's c_msg term
         std::string line = c.nick + ": ";
         line.append(payload);
+        if (g_coalesce) {
+            // Stage C: record, do not send. [u16 len][line] onto the room's
+            // tick buffer; flush_tick_rooms() delivers it at the tick.
+            std::string& buf = g_tick_buf[c.room];
+            if (buf.size() + 2 + line.size() > k_tick_cap) { ++g_tick_dropped; break; }
+            const uint16_t elen = static_cast<uint16_t>(line.size());
+            buf.append(reinterpret_cast<const char*>(&elen), 2);
+            buf.append(line);
+            break;
+        }
         broadcast(c.room, s_chat, line, -1);   // -1: echo back to sender too
         break;
     }
@@ -554,6 +625,22 @@ int main(int argc, char** argv) {
                               : "immediate (one send per delivery)");
 
     if (!tick::init(g_max_conns)) return 1;
+    if (const char* m = ::getenv("CHAT_TICK_MODE")) {
+        if (std::strcmp(m, "coalesce") == 0) {
+            if (!tick::g.enabled) {
+                std::fprintf(stderr, "CHAT_TICK_MODE=coalesce needs CHAT_TICK_HZ\n");
+                return 1;
+            }
+            g_coalesce = true;
+        } else if (std::strcmp(m, "immediate") != 0) {
+            std::fprintf(stderr, "CHAT_TICK_MODE must be immediate or coalesce\n");
+            return 1;
+        }
+    }
+    if (tick::g.enabled)
+        std::printf("[cfg ] tick delivery = %s\n",
+                    g_coalesce ? "coalesce (one frame per member per tick)"
+                               : "immediate (broadcast in the arriving batch)");
 
     // The connection cap is meaningless without the fd budget behind it: the
     // soft RLIMIT_NOFILE defaults to 1024, so a 10k cap without this just
@@ -657,7 +744,7 @@ int main(int argc, char** argv) {
         // The tick runs after the drain and before the flush, so the sends it
         // would have produced (none yet; the tick only touches its own
         // arena in stage A) leave in the same flush pass as the batch's.
-        tick::maybe_tick();
+        tick::maybe_tick(g_coalesce ? flush_tick_rooms : nullptr);
 
         // LESSON 8 — the flush/reap ordering.
         // Order matters. The first flush sends everything this batch queued
@@ -677,6 +764,10 @@ int main(int argc, char** argv) {
     }
 
     tick::report();
+    if (g_coalesce)
+        std::printf("[tick] coalesce: %llu tick frames queued, %llu inputs dropped at the %zu B cap\n",
+                    static_cast<unsigned long long>(g_tick_frames),
+                    static_cast<unsigned long long>(g_tick_dropped), k_tick_cap);
 
     for (auto& [fd, c] : g_conns) ::close(fd);
     g_conns.clear();

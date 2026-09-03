@@ -96,34 +96,60 @@ void consume_frames(conn& c, int64_t recv_ts, histogram& lat,
 
         const char* payload = in + off + k_header_size;
         off += k_header_size + len;
-        ++frames_in;
 
+        // One chat payload -> one delivery sample. Shared by the per-message
+        // broadcast frame and the stage C tick frame, which carries many.
+        auto sample = [&](const char* p, size_t n) {
+            if (n < k_blob_header) { ++samples_bad; return; }
+            const char* sep = static_cast<const char*>(std::memchr(p, ':', n));
+            if (!sep || (sep + 2) > (p + n)) { ++samples_bad; return; }
+            const char*  blob     = sep + 2;           // skip ": "
+            const size_t blob_len = static_cast<size_t>((p + n) - blob);
+            if (blob_len < k_blob_header) { ++samples_bad; return; }
+
+            // Whose message is this? A room may hold clients from another
+            // loadgen process, and subtracting a foreign timestamp means
+            // subtracting a foreign clock. Count them so a misconfigured
+            // fleet is visible rather than silently folded into the
+            // histogram, but never sample them.
+            uint32_t origin = 0;
+            std::memcpy(&origin, blob + 12, sizeof(origin));
+            if (origin != node) { ++foreign; return; }
+
+            int64_t intended = 0;
+            std::memcpy(&intended, blob, sizeof(intended));
+
+            // The timestamp is the intended send time, so this subtraction
+            // already includes any delay the client itself introduced. That
+            // is the point: measuring from the actual send time would delete
+            // exactly the samples where something went wrong. See
+            // run_traffic(). Under a tick server it also includes the wait
+            // for the tick, by design; those rows are not comparable with
+            // per-message-broadcast rows.
+            lat.add(recv_ts - intended);
+        };
+
+        if (type == g_proto.id_tick_out) {
+            // Stage C container: the frame itself is not a delivery, each
+            // entry is, so frames_in (deliveries) keeps its meaning and the
+            // fan-out gate keeps its definition.
+            size_t pos = 0;
+            while (len - pos >= 2) {
+                uint16_t elen = 0;
+                std::memcpy(&elen, payload + pos, 2);
+                pos += 2;
+                if (len - pos < elen) { ++samples_bad; break; }
+                ++frames_in;
+                sample(payload + pos, elen);
+                pos += elen;
+            }
+            continue;
+        }
+
+        ++frames_in;
         if (type != g_proto.id_chat_out || len < k_blob_header)
             continue;
-
-        const char* sep = static_cast<const char*>(
-            std::memchr(payload, ':', len));
-        if (!sep || (sep + 2) > (payload + len)) { ++samples_bad; continue; }
-        const char*  blob     = sep + 2;           // skip ": "
-        const size_t blob_len = static_cast<size_t>((payload + len) - blob);
-        if (blob_len < k_blob_header) { ++samples_bad; continue; }
-
-        // Whose message is this? A room may hold clients from another loadgen
-        // process, and subtracting a foreign timestamp means subtracting a
-        // foreign clock. Count them so a misconfigured fleet is visible rather
-        // than silently folded into the histogram, but never sample them.
-        uint32_t origin = 0;
-        std::memcpy(&origin, blob + 12, sizeof(origin));
-        if (origin != node) { ++foreign; continue; }
-
-        int64_t intended = 0;
-        std::memcpy(&intended, blob, sizeof(intended));
-
-        // The timestamp is the intended send time, so this subtraction already
-        // includes any delay the client itself introduced. That is the point:
-        // measuring from the actual send time would delete exactly the samples
-        // where something went wrong. See run_traffic().
-        lat.add(recv_ts - intended);
+        sample(payload, len);
     }
     if (off) {
         const size_t rem = c.rx_len - off;   // < one frame
